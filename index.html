@@ -403,6 +403,24 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
       <strong>Descanso semanal:</strong> Tolerancia desde 4h · Comidas desde 12h
     </div>
 
+    <!-- SELECTOR NIVEL Y NOMBRE — siempre visible -->
+    <div style="display:flex;gap:12px;align-items:center;background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:140px;">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Trabajador</span>
+        <input id="inp-nombre2" style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);" value="ERICK" oninput="document.getElementById('inp-nombre').value=this.value;guardar()">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex:2;min-width:200px;">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);white-space:nowrap;">Nivel</span>
+        <select id="sel-nivel2" onchange="document.getElementById('sel-nivel').value=this.value;cambiarNivel();"
+          style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);cursor:pointer;">
+        </select>
+      </div>
+      <div style="background:var(--blue);border-radius:8px;padding:8px 14px;text-align:center;min-width:120px;">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.6);">Salario diario</div>
+        <div id="sal-visible" style="font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:#7dd3fc;margin-top:2px;">$276.08</div>
+      </div>
+    </div>
+
     <div class="week-nav">
       <button class="nav-btn" onclick="cambiarSemana(-1)">← Anterior</button>
       <div class="week-info">
@@ -901,8 +919,11 @@ function cambiarSemana(d) {
 function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }
 function cambiarNivel() {
   nivel = parseInt(document.getElementById('sel-nivel').value);
-  document.getElementById('chip-sal').textContent  = `$${TAB[nivel].toFixed(2)}/día`;
+  document.getElementById('sel-nivel2').value = nivel;
+  const sal = TAB[nivel];
+  document.getElementById('chip-sal').textContent  = `$${sal.toFixed(2)}/día`;
   document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
+  document.getElementById('sal-visible').textContent = `$${sal.toFixed(2)}`;
   render();
 }
 function showTab(id) {
@@ -935,15 +956,19 @@ function initApp() {
 // INIT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const sel = document.getElementById('sel-nivel');
+const sel2 = document.getElementById('sel-nivel2');
 Object.keys(TAB).sort((a,b) => a-b).forEach(n => {
-  const o = document.createElement('option');
-  o.value = n;
-  o.textContent = `Nivel ${n}  —  $${TAB[n].toFixed(2)}/día`;
-  if (parseInt(n) === nivel) o.selected = true;
-  sel.appendChild(o);
+  [sel, sel2].forEach(s => {
+    const o = document.createElement('option');
+    o.value = n;
+    o.textContent = `Nivel ${n}  —  $${TAB[n].toFixed(2)}/día`;
+    if (parseInt(n) === nivel) o.selected = true;
+    s.appendChild(o);
+  });
 });
 document.getElementById('chip-sal').textContent  = `$${TAB[nivel].toFixed(2)}/día`;
 document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
+document.getElementById('sal-visible').textContent = `$${TAB[nivel].toFixed(2)}`;
 
 // Si ya la usó antes, no mostrar splash
 if (localStorage.getItem('cte_v4')) {
