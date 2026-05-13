@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ControlTE — PitaBot</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink:    #0e1117;
+  --paper:  #f5f3ee;
+  --cream:  #edeae2;
+  --rule:   #d4cfc4;
+  --mid:    #8a8378;
+  --muted:  #b8b2a6;
+  --blue:   #1a3a6b;
+  --blue2:  #2c5faa;
+  --red:    #b52b27;
+  --gold:   #b07d2a;
+  --green:  #2a6e3f;
+  --purple: #5e3a8c;
+  --white:  #ffffff;
+  --wa:     #25d366;
+  --shadow: 0 2px 12px rgba(14,17,23,.10);
+  --shadow-lg: 0 8px 32px rgba(14,17,23,.18);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body { font-family: 'DM Sans', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; }
+
+/* ━━━ SPLASH / ONBOARDING ━━━ */
+#splash {
+  position: fixed; inset: 0; z-index: 999;
+  background: var(--blue);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 20px;
+  transition: opacity .4s;
+}
+#splash.hide { opacity: 0; pointer-events: none; }
+.splash-logo {
+  width: 90px; height: 90px;
+  background: rgba(255,255,255,.12);
+  border: 2px solid rgba(255,255,255,.3);
+  border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 42px;
+}
+.splash-title { font-size: 32px; font-weight: 700; color: #fff; letter-spacing: -1px; }
+.splash-title span { color: #7dd3fc; }
+.splash-sub { font-size: 13px; color: rgba(255,255,255,.6); }
+.splash-btn {
+  margin-top: 10px;
+  background: #7dd3fc; color: var(--blue);
+  border: none; border-radius: 10px;
+  padding: 14px 40px; font-size: 15px; font-weight: 700;
+  cursor: pointer; transition: transform .12s, box-shadow .12s;
+  font-family: 'DM Sans', sans-serif;
+}
+.splash-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+.splash-free {
+  font-size: 11px; color: rgba(255,255,255,.45);
+  text-align: center; line-height: 1.6;
+}
+
+/* ━━━ PAYWALL OVERLAY ━━━ */
+#paywall {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(10,16,30,.85);
+  backdrop-filter: blur(6px);
+  display: none;
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+#paywall.show { display: flex; }
+.paywall-card {
+  background: var(--white);
+  border-radius: 18px;
+  padding: 32px 28px;
+  max-width: 420px; width: 100%;
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.paywall-icon { font-size: 56px; margin-bottom: 14px; }
+.paywall-title { font-size: 24px; font-weight: 700; color: var(--blue); margin-bottom: 10px; }
+.paywall-sub { font-size: 13px; color: var(--mid); line-height: 1.7; margin-bottom: 28px; }
+.wa-btn {
+  width: 100%; padding: 18px;
+  background: var(--wa); color: #fff;
+  border: none; border-radius: 12px;
+  font-size: 17px; font-weight: 700;
+  cursor: pointer; transition: all .15s;
+  font-family: 'DM Sans', sans-serif;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-bottom: 20px;
+  box-shadow: 0 6px 20px rgba(37,211,102,.35);
+}
+.wa-btn:hover { background: #1fb855; transform: translateY(-2px); box-shadow: 0 10px 28px rgba(37,211,102,.45); }
+.unlock-sep { font-size: 11px; color: var(--muted); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.unlock-sep::before,.unlock-sep::after { content:''; flex:1; height:1px; background:var(--rule); }
+.unlock-row { display: flex; gap: 8px; }
+.unlock-inp {
+  flex: 1;
+  background: var(--paper); border: 1.5px solid var(--rule);
+  border-radius: 8px; padding: 10px 12px;
+  font-size: 13px; font-family: 'DM Mono', monospace;
+  outline: none; color: var(--ink);
+  text-transform: uppercase; letter-spacing: 2px;
+  transition: border-color .15s;
+}
+.unlock-inp:focus { border-color: var(--blue2); }
+.unlock-btn {
+  background: var(--blue); color: #fff;
+  border: none; border-radius: 8px;
+  padding: 10px 16px; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: background .15s;
+  font-family: 'DM Sans', sans-serif; white-space: nowrap;
+}
+.unlock-btn:hover { background: var(--blue2); }
+.unlock-msg { font-size: 11px; margin-top: 8px; min-height: 16px; }
+.unlock-msg.ok { color: var(--green); }
+.unlock-msg.err { color: var(--red); }
+
+/* ━━━ HEADER ━━━ */
+.header {
+  background: var(--blue); color: var(--white);
+  padding: 0 20px; display: flex; align-items: center;
+  gap: 16px; height: 58px;
+  position: sticky; top: 0; z-index: 200;
+  box-shadow: var(--shadow-lg);
+}
+.header-brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; border-right: 1px solid rgba(255,255,255,.2); padding-right: 16px; }
+.brand-logo { font-size: 22px; }
+.brand-name { font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
+.brand-name span { color: #7dd3fc; }
+.brand-sub { font-size: 9px; color: rgba(255,255,255,.5); margin-top: 1px; }
+.header-fields { display: flex; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap; }
+.hfield { display: flex; align-items: center; gap: 6px; }
+.hfield-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,.5); }
+.hfield input, .hfield select {
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+  color: #fff; border-radius: 5px; padding: 5px 8px;
+  font-size: 12px; font-family: 'DM Sans', sans-serif; outline: none;
+}
+.hfield input { width: 95px; }
+.hfield select { width: 200px; cursor: pointer; }
+.hfield select option { background: var(--blue); }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.chip { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 20px; padding: 3px 10px; font-size: 10px; color: rgba(255,255,255,.75); white-space: nowrap; }
+.chip b { color: #7dd3fc; }
+.status-badge {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
+  border-radius: 20px; padding: 4px 10px;
+  font-size: 10px; font-weight: 600; color: rgba(255,255,255,.8);
+  cursor: pointer;
+}
+.status-dot { width: 7px; height: 7px; border-radius: 50%; }
+.status-dot.free { background: var(--gold); }
+.status-dot.active { background: var(--wa); }
+
+/* ━━━ TABS ━━━ */
+.tabs-bar { background: var(--white); border-bottom: 2px solid var(--rule); display: flex; padding: 0 20px; }
+.tab-btn { padding: 11px 16px; font-size: 12px; font-weight: 600; color: var(--mid); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; }
+.tab-btn:hover { color: var(--ink); }
+.tab-btn.active { color: var(--blue); border-bottom-color: var(--blue2); }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ━━━ LAYOUT ━━━ */
+.container { max-width: 1160px; margin: 0 auto; padding: 20px; }
+.sec-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.8px; color: var(--mid); margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+.sec-lbl::after { content:''; flex:1; height:1px; background:var(--rule); }
+
+/* ━━━ WEEK NAV ━━━ */
+.week-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.nav-btn { background: var(--white); border: 1.5px solid var(--rule); color: var(--ink); padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; font-weight: 600; transition: all .15s; box-shadow: var(--shadow); }
+.nav-btn:hover { border-color: var(--blue2); color: var(--blue); }
+.week-info .week-num { font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; color: var(--blue); }
+.week-info .week-rng { font-size: 11px; color: var(--mid); }
+#btn-pag { margin-left: auto; border-color: var(--green); color: var(--green); }
+#btn-pag:hover { background: var(--green); color: #fff; }
+#btn-pag.paid { background: rgba(42,110,63,.1); opacity: .7; }
+
+/* ━━━ FREE COUNTER ━━━ */
+.free-bar {
+  background: #fff8e6; border: 1.5px solid #e8d48a;
+  border-left: 3px solid var(--gold);
+  border-radius: 8px; padding: 10px 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; gap: 12px; flex-wrap: wrap;
+}
+.free-bar-txt { font-size: 12px; color: #5a4800; line-height: 1.5; }
+.free-bar-txt b { color: var(--gold); }
+.free-weeks { display: flex; gap: 6px; }
+.fweek { width: 36px; height: 8px; border-radius: 4px; }
+.fweek.used { background: var(--gold); }
+.fweek.used.last { background: var(--red); }
+.fweek.free { background: var(--rule); }
+
+/* ━━━ NOTICE ━━━ */
+.notice { background: #fff8e6; border: 1px solid #e8d48a; border-left: 3px solid var(--gold); border-radius: 7px; padding: 10px 14px; font-size: 12px; color: #5a4800; margin-bottom: 16px; line-height: 1.7; }
+
+/* ━━━ DAYS ━━━ */
+.days-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 8px; margin-bottom: 20px; }
+.day-card { background: var(--white); border: 1.5px solid var(--rule); border-radius: 10px; padding: 12px 8px; text-align: center; box-shadow: var(--shadow); transition: border-color .15s, transform .12s; }
+.day-card:hover { transform: translateY(-1px); }
+.day-card.festivo { border-color: var(--gold); background: #fffbf0; }
+.day-card.descanso { border-color: var(--purple); background: #faf6ff; }
+.day-name { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--mid); margin-bottom: 3px; }
+.day-date { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 5px; }
+.day-tag { display: inline-block; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; padding: 2px 6px; border-radius: 8px; margin-bottom: 7px; min-height: 14px; }
+.day-tag.festivo { background: #fff3d0; color: var(--gold); }
+.day-tag.descanso { background: #f0e8ff; color: var(--purple); }
+.day-tag.normal { background: transparent; color: transparent; }
+.hrs-inp { width: 100%; background: var(--paper); border: 1.5px solid var(--rule); border-radius: 6px; color: var(--ink); text-align: center; font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; padding: 7px 4px; outline: none; transition: border-color .15s; -moz-appearance: textfield; }
+.hrs-inp::-webkit-inner-spin-button, .hrs-inp::-webkit-outer-spin-button { -webkit-appearance: none; }
+.hrs-inp:focus { border-color: var(--blue2); background: var(--white); }
+.day-card.festivo .hrs-inp:focus { border-color: var(--gold); }
+.day-card.descanso .hrs-inp:focus { border-color: var(--purple); }
+.hrs-lbl { font-size: 9px; color: var(--muted); margin-top: 2px; }
+.type-row { display: flex; gap: 3px; margin-top: 8px; }
+.type-btn { flex: 1; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 4px 1px; border-radius: 4px; border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; transition: all .12s; font-family: 'DM Sans', sans-serif; }
+.type-btn.on-n { background: #e8f0ff; border-color: var(--blue2); color: var(--blue); }
+.type-btn.on-f { background: #fff3d0; border-color: var(--gold); color: var(--gold); }
+.type-btn.on-d { background: #f0e8ff; border-color: var(--purple); color: var(--purple); }
+
+/* ━━━ SUMMARY ━━━ */
+.scards { display: grid; grid-template-columns: repeat(6,1fr); gap: 10px; margin-bottom: 20px; }
+.scard { background: var(--white); border: 1.5px solid var(--rule); border-radius: 10px; padding: 13px; box-shadow: var(--shadow); }
+.scard-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--mid); margin-bottom: 5px; }
+.scard-val { font-family: 'DM Mono', monospace; font-size: 18px; font-weight: 500; color: var(--ink); }
+.scard-unit { font-size: 10px; color: var(--muted); margin-left: 3px; }
+.scard.hl { background: var(--blue); border-color: var(--blue); }
+.scard.hl .scard-lbl { color: rgba(255,255,255,.6); }
+.scard.hl .scard-val { color: #fff; }
+
+/* ━━━ TABLE ━━━ */
+.tbl-wrap { background: var(--white); border: 1.5px solid var(--rule); border-radius: 10px; overflow: auto; box-shadow: var(--shadow); margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; min-width: 780px; }
+thead tr { background: var(--blue); }
+th { padding: 9px 12px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,.7); text-align: right; white-space: nowrap; }
+th:first-child { text-align: left; }
+td { padding: 9px 12px; border-top: 1px solid var(--cream); font-family: 'DM Mono', monospace; font-size: 12px; text-align: right; color: var(--mid); }
+td:first-child { font-family: 'DM Sans', sans-serif; text-align: left; color: var(--ink); font-size: 13px; }
+tr.zrow td { opacity: .28; }
+tr.trow td { background: var(--cream); color: var(--ink); font-weight: 500; border-top: 2px solid var(--rule); }
+tr.grow td { background: var(--blue); color: rgba(255,255,255,.85); font-size: 13px; font-weight: 500; border-top: 2px solid var(--blue); }
+tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
+.tag-f { color: var(--gold); font-size: 10px; margin-left: 4px; }
+.tag-d { color: var(--purple); font-size: 10px; margin-left: 4px; }
+.z { color: var(--muted); }
+.tol-hhmm { font-weight: 500; color: var(--ink); }
+.tol-min { display: block; font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+/* ━━━ HISTORIAL ━━━ */
+.hitem { background: var(--white); border: 1.5px solid var(--rule); border-radius: 9px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: all .15s; margin-bottom: 8px; box-shadow: var(--shadow); }
+.hitem:hover { border-color: var(--blue2); box-shadow: var(--shadow-lg); }
+.hitem.paid { border-left: 3px solid var(--green); }
+.hwk { font-weight: 700; font-size: 13px; }
+.hdet { font-size: 11px; color: var(--mid); margin-top: 2px; }
+.htot { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 500; color: var(--blue); }
+.hbdg { font-size: 10px; padding: 3px 10px; border-radius: 20px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+.hbdg.pg { background: #e6f5ec; color: var(--green); border: 1px solid #b4dfc3; }
+.hbdg.pe { background: #fff8e6; color: var(--gold); border: 1px solid #e8d48a; }
+
+/* ━━━ REFERENCIA ━━━ */
+.ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+.rbox { background: var(--white); border: 1.5px solid var(--rule); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+.rbox-hd { background: var(--cream); padding: 9px 14px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--mid); border-bottom: 1px solid var(--rule); }
+.rrow { display: flex; justify-content: space-between; padding: 7px 14px; border-bottom: 1px solid var(--cream); font-size: 12px; }
+.rrow:last-child { border-bottom: none; }
+.rrow span:first-child { color: var(--mid); }
+.rrow span:last-child { font-family: 'DM Mono', monospace; font-weight: 500; color: var(--green); }
+.rrow.na span:last-child { color: var(--muted); }
+
+/* ━━━ SOPORTE ━━━ */
+.soporte-card { background: var(--white); border: 1.5px solid var(--rule); border-radius: 14px; padding: 28px; max-width: 480px; margin: 0 auto; box-shadow: var(--shadow-lg); text-align: center; }
+.soporte-icon { font-size: 48px; margin-bottom: 12px; }
+.soporte-title { font-size: 20px; font-weight: 700; color: var(--blue); margin-bottom: 8px; }
+.soporte-sub { font-size: 13px; color: var(--mid); line-height: 1.7; margin-bottom: 24px; }
+.soporte-wa { display: inline-flex; align-items: center; gap: 10px; background: var(--wa); color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-size: 15px; font-weight: 700; transition: all .15s; }
+.soporte-wa:hover { background: #1fb855; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(37,211,102,.3); }
+.soporte-hours { font-size: 11px; color: var(--muted); margin-top: 14px; }
+
+/* ━━━ FOOTER ━━━ */
+.footer { text-align: center; padding: 20px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--rule); margin-top: 20px; }
+.footer b { color: var(--mid); }
+
+/* ━━━ BOTÓN FLOTANTE SOPORTE ━━━ */
+.wa-float {
+  position: fixed; bottom: 24px; right: 24px; z-index: 300;
+  background: var(--wa); color: #fff;
+  border: none; border-radius: 50px;
+  padding: 14px 20px;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all .2s;
+  font-family: 'DM Sans', sans-serif;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 6px 24px rgba(37,211,102,.45);
+  text-decoration: none;
+}
+.wa-float:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 10px 32px rgba(37,211,102,.55); }
+  .days-grid { grid-template-columns: repeat(4,1fr); }
+  .scards { grid-template-columns: repeat(3,1fr); }
+  .ref-grid { grid-template-columns: 1fr; }
+  .plans-grid { grid-template-columns: 1fr; }
+  .header-fields { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ SPLASH ═══ -->
+<div id="splash">
+  <div class="splash-logo">💰</div>
+  <div class="splash-title">Control<span>TE</span></div>
+  <div class="splash-sub">by PitaBot · PEMEX · STPRM · CCT 2025–2027</div>
+  <button class="splash-btn" onclick="initApp()">Comenzar →</button>
+  <div class="splash-free">✅ 2 semanas gratis incluidas<br>Sin tarjeta de crédito requerida</div>
+</div>
+
+<!-- ═══ PAYWALL ═══ -->
+<div id="paywall">
+  <div class="paywall-card">
+    <div class="paywall-icon">💰</div>
+    <div class="paywall-title">Versión gratuita completada</div>
+    <div class="paywall-sub">
+      Ya registraste tus <strong>2 semanas de prueba</strong>.<br>
+      Contáctame por WhatsApp para desbloquear el acceso completo y seguir registrando tus semanas.
+    </div>
+
+    <button class="wa-btn" onclick="contactarWA()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.528 5.855L0 24l6.335-1.524A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.667-.504-5.198-1.385l-.373-.221-3.861.929.972-3.762-.243-.387A9.953 9.953 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+      💬 Contactar soporte técnico — WhatsApp
+    </button>
+
+    <div class="unlock-sep">¿Ya tienes tu código de acceso?</div>
+    <div class="unlock-row">
+      <input class="unlock-inp" id="unlock-inp" placeholder="Ingresa tu código" maxlength="12">
+      <button class="unlock-btn" onclick="validarCodigo()">Activar</button>
+    </div>
+    <div class="unlock-msg" id="unlock-msg"></div>
+  </div>
+</div>
+
+<!-- ═══ HEADER ═══ -->
+<header class="header">
+  <div class="header-brand">
+    <div class="brand-logo">💰</div>
+    <div>
+      <div class="brand-name">Control<span>TE</span></div>
+      <div class="brand-sub">PitaBot · CCT 2025–2027</div>
+    </div>
+  </div>
+  <div class="header-fields">
+    <div class="hfield">
+      <span class="hfield-lbl">Trabajador</span>
+      <input id="inp-nombre" value="ERICK" oninput="guardar()">
+    </div>
+    <div class="hfield">
+      <span class="hfield-lbl">Nivel</span>
+      <select id="sel-nivel" onchange="cambiarNivel()"></select>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="chip">Salario: <b id="chip-sal">—</b></div>
+    <div class="chip">Hora TE: <b id="chip-hora">—</b></div>
+    <div class="status-badge" onclick="verEstado()" id="status-badge">
+      <div class="status-dot free" id="status-dot"></div>
+      <span id="status-txt">Gratis</span>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ TABS ═══ -->
+<div class="tabs-bar">
+  <div class="tab-btn active" onclick="showTab('captura')">📋 Captura</div>
+  <div class="tab-btn" onclick="showTab('historial')">📊 Historial</div>
+  <div class="tab-btn" onclick="showTab('referencia')">📖 Referencia</div>
+  <div class="tab-btn" onclick="showTab('soporte')">💬 Soporte</div>
+</div>
+
+<div class="container">
+
+  <!-- ═══ CAPTURA ═══ -->
+  <div id="tab-captura" class="tab-pane active">
+
+    <!-- Barra semanas gratuitas -->
+    <div class="free-bar" id="free-bar">
+      <div class="free-bar-txt">
+        <b id="free-txt">Semanas usadas: 0 / 2</b><br>
+        <span id="free-sub">Tienes 2 semanas gratuitas disponibles</span>
+      </div>
+      <div class="free-weeks">
+        <div class="fweek free" id="fw1"></div>
+        <div class="fweek free" id="fw2"></div>
+      </div>
+    </div>
+
+    <div class="notice">
+      ⚠️ <strong>Festivo (CCT Cl. 139):</strong> Sin tolerancia antes de 12h · Comidas desde 12h &nbsp;|&nbsp;
+      <strong>Descanso semanal:</strong> Tolerancia desde 4h · Comidas desde 12h
+    </div>
+
+    <div class="week-nav">
+      <button class="nav-btn" onclick="cambiarSemana(-1)">← Anterior</button>
+      <div class="week-info">
+        <div class="week-num" id="wnum">Semana 19</div>
+        <div class="week-rng" id="wrng"></div>
+      </div>
+      <button class="nav-btn" onclick="cambiarSemana(1)">Siguiente →</button>
+      <button class="nav-btn" id="btn-pag" onclick="marcarPagado()">✓ Marcar pagado</button>
+    </div>
+
+    <div class="sec-lbl">Días de la semana</div>
+    <div class="days-grid" id="days-grid"></div>
+    <div class="scards" id="scards"></div>
+
+    <div class="sec-lbl">Desglose por concepto de nómina</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Día</th><th>Horas</th><th>Tolerancia</th>
+          <th>1130 T.E. medido</th><th>1140 # Comidas</th><th>Importe comidas</th>
+          <th>1180 TE tolerancia</th><th>1190 T. penado</th><th>Subtotal</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══ HISTORIAL ═══ -->
+  <div id="tab-historial" class="tab-pane">
+    <div class="sec-lbl">Semanas registradas</div>
+    <div id="hlist"></div>
+  </div>
+
+  <!-- ═══ REFERENCIA ═══ -->
+  <div id="tab-referencia" class="tab-pane">
+    <div class="ref-grid">
+      <div class="rbox"><div class="rbox-hd">Tolerancia por horas (tabla instructivo)</div><div id="ref-tol"></div></div>
+      <div class="rbox"><div class="rbox-hd">Comidas — normal (≥4h) · festivo/descanso (≥12h)</div><div id="ref-com"></div></div>
+    </div>
+    <div class="ref-grid">
+      <div class="rbox"><div class="rbox-hd">Tasas — nivel seleccionado</div><div id="ref-tasas"></div></div>
+      <div class="rbox">
+        <div class="rbox-hd">Días festivos PEMEX 2026 (CCT Cl. 139 + LFT)</div>
+        <div>
+          <div class="rrow"><span>1 enero — descanso obligatorio LFT</span><span>✓</span></div>
+          <div class="rrow"><span>2 febrero — descanso obligatorio LFT</span><span>✓</span></div>
+          <div class="rrow"><span>16 marzo — festivo CCT</span><span>✓</span></div>
+          <div class="rrow"><span>2 abril — Jueves Santo CCT</span><span>✓</span></div>
+          <div class="rrow"><span>3 abril — Viernes Santo CCT</span><span>✓</span></div>
+          <div class="rrow"><span>4 abril — Sábado de Gloria CCT</span><span>✓</span></div>
+          <div class="rrow"><span>1 mayo — descanso obligatorio LFT</span><span>✓</span></div>
+          <div class="rrow"><span>5 mayo — festivo CCT</span><span>✓</span></div>
+          <div class="rrow"><span>16 septiembre — descanso obligatorio LFT</span><span>✓</span></div>
+          <div class="rrow"><span>12 octubre — festivo CCT</span><span>✓</span></div>
+          <div class="rrow"><span>1 noviembre — festivo CCT</span><span>✓</span></div>
+          <div class="rrow"><span>2 noviembre — festivo CCT</span><span>✓</span></div>
+          <div class="rrow"><span>16 noviembre — descanso obligatorio LFT</span><span>✓</span></div>
+          <div class="rrow"><span>25 diciembre — descanso obligatorio LFT</span><span>✓</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SOPORTE ═══ -->
+  <div id="tab-soporte" class="tab-pane">
+    <div class="soporte-card">
+      <div class="soporte-icon">💰</div>
+      <div class="soporte-title">Soporte técnico PitaBot</div>
+      <div class="soporte-sub">
+        ¿Tienes dudas sobre la app o quieres activar tu acceso completo?<br>
+        Escríbeme directamente por WhatsApp y te atiendo a la brevedad.
+      </div>
+      <a class="soporte-wa" href="https://wa.me/529616868835" target="_blank">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.528 5.855L0 24l6.335-1.524A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.667-.504-5.198-1.385l-.373-.221-3.861.929.972-3.762-.243-.387A9.953 9.953 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+        Escribir a WhatsApp
+      </a>
+      <div class="soporte-hours">ControlTE by PitaBot · PEMEX STPRM CCT 2025–2027</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  <b>ControlTE</b> by PitaBot &nbsp;·&nbsp; PEMEX · STPRM · CCT 2025–2027 &nbsp;·&nbsp; Todos los derechos reservados
+</div>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TABULADOR NIVEL 8–35  (Anexo 1, ago 2025)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const TAB = {
+   8:180.01,  9:181.00, 10:181.85, 11:182.74, 12:186.50,
+  13:195.79, 14:205.49, 15:215.78, 16:221.68, 17:232.26,
+  18:244.02, 19:255.21, 20:265.34, 21:276.08, 22:285.72,
+  23:295.64, 24:305.31, 25:310.40, 26:326.12, 27:340.30,
+  28:353.52, 29:367.60, 30:382.90, 31:398.51, 32:414.07,
+  33:430.77, 34:448.11, 35:467.73
+};
+const TASA_COMIDA = 187.75;
+const TOL_PCT     = 0.123;
+const TTOL = {2:0,4:20,5:40,6:60,7:80,8:100,9:120,10:140,
+              11:160,12:180,13:200,14:220,15:240,16:260};
+const FEST = new Set([
+  '2026-01-01','2026-02-02','2026-03-16',
+  '2026-04-02','2026-04-03','2026-04-04',
+  '2026-05-01','2026-05-05','2026-09-16',
+  '2026-10-12','2026-11-01','2026-11-02',
+  '2026-11-16','2026-12-25'
+]);
+const DNOM = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const WA_NUM = '529616868835';
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FREEMIUM — límite 2 semanas
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Licencia: { code, plan:'week'|'month'|'year', activado: timestamp, expira: timestamp }
+function getLicencia() {
+  try { return JSON.parse(localStorage.getItem('cte_lic') || 'null'); } catch { return null; }
+}
+function setLicencia(lic) { localStorage.setItem('cte_lic', JSON.stringify(lic)); }
+
+function licenciaActiva() {
+  const lic = getLicencia();
+  if (!lic) return false;
+  return Date.now() < lic.expira;
+}
+
+function diasRestantes() {
+  const lic = getLicencia();
+  if (!lic) return 0;
+  return Math.max(0, Math.ceil((lic.expira - Date.now()) / 86400000));
+}
+
+// Semanas con datos reales (con al menos 1 hora ingresada)
+function semanasUsadas() {
+  const d = JSON.parse(localStorage.getItem('cte_v4') || '{}');
+  return Object.values(d).filter(sd =>
+    sd.dias && sd.dias.some(dia => (dia.horas||0) > 0)
+  ).length;
+}
+
+function puedeUsarSemana(s) {
+  if (licenciaActiva()) return true;
+  const d = JSON.parse(localStorage.getItem('cte_v4') || '{}');
+  const k = 's' + s;
+  // Si esta semana ya tiene datos, puede seguir editándola
+  const tieneDatos = d[k] && d[k].dias && d[k].dias.some(dia => (dia.horas||0) > 0);
+  if (tieneDatos) return true;
+  // Contar semanas distintas con datos
+  const semsConDatos = Object.keys(d).filter(k2 =>
+    d[k2].dias && d[k2].dias.some(dia => (dia.horas||0) > 0)
+  );
+  return semsConDatos.length < 2;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ESTADO
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const SEM_BASE  = 19;
+const DATE_BASE = new Date(2026, 4, 4); // lunes 4 mayo 2026 = semana 19
+
+let nivel  = parseInt(localStorage.getItem('cte_nivel')  || 21);
+let semana = parseInt(localStorage.getItem('cte_semana') || SEM_BASE);
+let datos  = JSON.parse(localStorage.getItem('cte_v4')   || '{}');
+
+const horaTE  = () => (TAB[nivel] / 8) * 2;
+const penHora = () => TAB[nivel] / 8;
+
+function semInicio(s) {
+  const d = new Date(DATE_BASE);
+  d.setDate(d.getDate() + (s - SEM_BASE) * 7);
+  return d;
+}
+
+function semData(s) {
+  const k = 's' + s;
+  if (!datos[k]) {
+    const ini = semInicio(s);
+    datos[k] = {
+      pagado: false,
+      dias: Array.from({length:7}, (_,i) => {
+        const d = new Date(ini); d.setDate(d.getDate()+i);
+        const iso = d.toISOString().slice(0,10);
+        return { fecha:iso, horas:0, tipo: FEST.has(iso)?'festivo': i>=5?'descanso':'normal' };
+      })
+    };
+  }
+  return datos[k];
+}
+
+function guardar() {
+  localStorage.setItem('cte_v4',    JSON.stringify(datos));
+  localStorage.setItem('cte_nivel', nivel);
+  localStorage.setItem('cte_semana',semana);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VALIDACIÓN DE CÓDIGO
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Formato del código: PLAN-CLAVE donde PLAN = W/M/Y y CLAVE = alfanumérico
+// Ejemplo: W-AB3K92 = 1 semana, M-XP7Q4R = 1 mes, Y-ZT2M8N = 1 año
+// El código lo generas tú manualmente; aquí solo validamos el formato y el plan.
+// En la versión con Google Sheets, aquí consultará tu hoja.
+
+function parseCodigo(raw) {
+  const cod = raw.trim().toUpperCase();
+  const match = cod.match(/^([WMY])-([A-Z0-9]{4,8})$/);
+  if (!match) return null;
+  const planes = { W:'week', M:'month', Y:'year' };
+  const duraciones = {
+    week:  7   * 24 * 3600 * 1000,
+    month: 30  * 24 * 3600 * 1000,
+    year:  365 * 24 * 3600 * 1000
+  };
+  return { plan: planes[match[1]], duracion: duraciones[planes[match[1]]], codigo: cod };
+}
+
+function validarCodigo() {
+  const raw = document.getElementById('unlock-inp').value;
+  const msg = document.getElementById('unlock-msg');
+  const parsed = parseCodigo(raw);
+
+  if (!parsed) {
+    msg.className = 'unlock-msg err';
+    msg.textContent = '❌ Código inválido. Verifica el formato.';
+    return;
+  }
+
+  // Verificar si ya fue usado
+  const usados = JSON.parse(localStorage.getItem('cte_usados') || '[]');
+  if (usados.includes(parsed.codigo)) {
+    msg.className = 'unlock-msg err';
+    msg.textContent = '❌ Este código ya fue utilizado.';
+    return;
+  }
+
+  // Activar licencia
+  const ahora = Date.now();
+  const lic = { code: parsed.codigo, plan: parsed.plan, activado: ahora, expira: ahora + parsed.duracion };
+  setLicencia(lic);
+  usados.push(parsed.codigo);
+  localStorage.setItem('cte_usados', JSON.stringify(usados));
+
+  msg.className = 'unlock-msg ok';
+  const nombres = { week:'1 semana', month:'1 mes', year:'1 año' };
+  msg.textContent = `✅ ¡Activado! Acceso por ${nombres[parsed.plan]}.`;
+
+  setTimeout(() => {
+    document.getElementById('paywall').classList.remove('show');
+    actualizarEstado();
+    render();
+  }, 1500);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CÁLCULOS CCT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function getTolMin(horas, tipo) {
+  if (tipo === 'festivo' && horas < 12) return 0;
+  return TTOL[horas] || 0;
+}
+function getComidas(horas, tipo) {
+  if (tipo === 'festivo' || tipo === 'descanso') return horas >= 12 ? 2 : 0;
+  if (horas >= 5) return 2;
+  if (horas >= 4) return 1;
+  return 0;
+}
+function calcDia(d) {
+  const h = d.horas || 0, t = d.tipo || 'normal';
+  const te  = h * horaTE();
+  const com = getComidas(h, t);
+  const icm = com * TASA_COMIDA;
+  const tm  = getTolMin(h, t);
+  const tet = h * horaTE() * TOL_PCT;
+  const pen = h * 0.5 * penHora();
+  return { h, t, te, com, icm, tm, tet, pen, sub: h > 0 ? te+icm+tet+pen : 0 };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FORMATO
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const f$ = n => n === 0 ? '<span class="z">—</span>'
+  : '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fDate = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX', {day:'2-digit', month:'short'});
+const fTol  = m => m ? `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}` : null;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UI ESTADO
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function actualizarEstado() {
+  const dot  = document.getElementById('status-dot');
+  const txt  = document.getElementById('status-txt');
+  const bar  = document.getElementById('free-bar');
+  const ftxt = document.getElementById('free-txt');
+  const fsub = document.getElementById('free-sub');
+  const fw1  = document.getElementById('fw1');
+  const fw2  = document.getElementById('fw2');
+
+  if (licenciaActiva()) {
+    const dias = diasRestantes();
+    const lic  = getLicencia();
+    const nom  = { week:'semana', month:'mes', year:'año' };
+    dot.className  = 'status-dot active';
+    txt.textContent = `✓ Activo — ${dias} días`;
+    bar.style.borderLeftColor = 'var(--green)';
+    bar.style.background = '#f0faf4';
+    ftxt.innerHTML = `<b style="color:var(--green)">✅ Licencia activa — Plan ${nom[lic.plan]}</b>`;
+    fsub.textContent = `Vence en ${dias} día${dias!==1?'s':''}.`;
+    fw1.className = 'fweek used';
+    fw2.className = 'fweek used';
+  } else {
+    const usadas = semanasUsadas();
+    dot.className  = 'status-dot free';
+    txt.textContent = `Gratis · ${usadas}/2`;
+    fw1.className = `fweek ${usadas >= 1 ? 'used' + (usadas===1?' last':'') : 'free'}`;
+    fw2.className = `fweek ${usadas >= 2 ? 'used last' : 'free'}`;
+    ftxt.innerHTML = `<b>Semanas usadas: ${usadas} / 2</b>`;
+    fsub.textContent = usadas >= 2
+      ? '⛔ Límite alcanzado — activa tu plan para continuar'
+      : `Tienes ${2 - usadas} semana${2-usadas!==1?'s':''} gratuita${2-usadas!==1?'s':''} disponible${2-usadas!==1?'s':''}`;
+  }
+}
+
+function verEstado() {
+  if (!licenciaActiva()) mostrarPaywall();
+}
+
+function mostrarPaywall() {
+  document.getElementById('paywall').classList.add('show');
+  selPlan('month');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RENDER PRINCIPAL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function render() {
+  actualizarEstado();
+  const sd = semData(semana);
+
+  document.getElementById('wnum').textContent = `Semana ${semana}`;
+  document.getElementById('wrng').textContent = `${fDate(sd.dias[0].fecha)} – ${fDate(sd.dias[6].fecha)}`;
+  const btn = document.getElementById('btn-pag');
+  btn.textContent = sd.pagado ? '✓ Pagada' : '✓ Marcar pagado';
+  btn.className   = 'nav-btn' + (sd.pagado ? ' paid' : '');
+
+  // DÍAS
+  const grid = document.getElementById('days-grid');
+  grid.innerHTML = '';
+  sd.dias.forEach((d, i) => {
+    const el = document.createElement('div');
+    el.className = `day-card ${d.tipo !== 'normal' ? d.tipo : ''}`;
+    el.innerHTML = `
+      <div class="day-name">${DNOM[i]}</div>
+      <div class="day-date">${fDate(d.fecha)}</div>
+      <div class="day-tag ${d.tipo}">${d.tipo === 'normal' ? '·' : d.tipo}</div>
+      <input class="hrs-inp" type="number" min="0" max="24" value="${d.horas}"
+        oninput="setH(${i},this.value)">
+      <div class="hrs-lbl">horas extra</div>
+      <div class="type-row">
+        <button class="type-btn ${d.tipo==='normal'?'on-n':''}"   onclick="setT(${i},'normal')">Nor</button>
+        <button class="type-btn ${d.tipo==='festivo'?'on-f':''}"  onclick="setT(${i},'festivo')">Fes</button>
+        <button class="type-btn ${d.tipo==='descanso'?'on-d':''}" onclick="setT(${i},'descanso')">Des</button>
+      </div>`;
+    grid.appendChild(el);
+  });
+
+  // TABLA
+  const tb = document.getElementById('tbody');
+  tb.innerHTML = '';
+  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tP=0,tS=0;
+
+  sd.dias.forEach((d, i) => {
+    const c = calcDia(d);
+    const tag = c.t !== 'normal' ? `<span class="tag-${c.t[0]}">[${c.t}]</span>` : '';
+    const hhmm = fTol(c.tm);
+    const tr = document.createElement('tr');
+    if (c.h === 0) tr.className = 'zrow';
+    tr.innerHTML = `
+      <td>${DNOM[i]} ${fDate(d.fecha)}${tag}</td>
+      <td>${c.h || '<span class="z">—</span>'}</td>
+      <td>${hhmm ? `<span class="tol-hhmm">${hhmm}</span><span class="tol-min">${c.tm} min</span>` : '<span class="z">—</span>'}</td>
+      <td>${f$(c.te)}</td>
+      <td>${c.com || '<span class="z">—</span>'}</td>
+      <td>${f$(c.icm)}</td>
+      <td>${f$(c.tet)}</td>
+      <td>${f$(c.pen)}</td>
+      <td>${c.h > 0 ? f$(c.sub) : '<span class="z">—</span>'}</td>`;
+    tb.appendChild(tr);
+    tH+=c.h; tTE+=c.te; tC+=c.com; tIC+=c.icm; tTM+=c.tm; tTET+=c.tet; tP+=c.pen; tS+=c.sub;
+  });
+
+  const totHHMM = fTol(tTM);
+  const trT = document.createElement('tr'); trT.className = 'trow';
+  trT.innerHTML = `
+    <td>TOTAL SEMANA</td><td>${tH}</td>
+    <td>${totHHMM ? `<b>${totHHMM}</b><span class="tol-min">${tTM} min</span>` : '<span class="z">—</span>'}</td>
+    <td>${f$(tTE)}</td><td>${tC||'<span class="z">—</span>'}</td>
+    <td>${f$(tIC)}</td><td>${f$(tTET)}</td><td>${f$(tP)}</td><td>${f$(tS)}</td>`;
+  tb.appendChild(trT);
+
+  const trG = document.createElement('tr'); trG.className = 'grow';
+  trG.innerHTML = `<td colspan="8" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190)</td><td>${f$(tS)}</td>`;
+  tb.appendChild(trG);
+
+  // CARDS
+  document.getElementById('scards').innerHTML = `
+    <div class="scard"><div class="scard-lbl">Total horas</div><div class="scard-val">${tH}<span class="scard-unit">hrs</span></div></div>
+    <div class="scard"><div class="scard-lbl">Tolerancia total</div><div class="scard-val" style="font-size:16px">${totHHMM||'—'}<span class="scard-unit">h:mm</span></div></div>
+    <div class="scard" style="border-color:var(--gold);background:#fffbf0"><div class="scard-lbl" style="color:var(--gold)">🍽 Comidas semana</div><div class="scard-val" style="color:var(--gold)">${tC}<span class="scard-unit">comidas</span></div><div style="font-size:10px;color:var(--muted);margin-top:4px">$${tIC.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard"><div class="scard-lbl">T.E. medido 1130</div><div class="scard-val" style="font-size:15px">$${tTE.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard"><div class="scard-lbl">Tol. + T.penado</div><div class="scard-val" style="font-size:15px">$${(tTET+tP).toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard hl"><div class="scard-lbl">Total a cobrar</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
+
+  guardar();
+  renderHist();
+  renderRefTasas();
+}
+
+function renderHist() {
+  const list = document.getElementById('hlist');
+  list.innerHTML = '';
+  const sems = Object.keys(datos).map(k => parseInt(k.slice(1))).sort((a,b) => b-a);
+  if (!sems.length) {
+    list.innerHTML = '<p style="padding:24px;text-align:center;color:var(--mid)">No hay semanas registradas aún.</p>';
+    return;
+  }
+  sems.forEach(s => {
+    const sd = datos['s'+s]; let tH=0, tS=0;
+    sd.dias.forEach(d => { const c=calcDia(d); tH+=c.h; tS+=c.sub; });
+    if (tH === 0 && !sd.pagado) return;
+    const el = document.createElement('div');
+    el.className = `hitem ${sd.pagado?'paid':''}`;
+    el.onclick = () => { semana=s; showTab('captura'); render(); };
+    el.innerHTML = `
+      <div><div class="hwk">Semana ${s}</div><div class="hdet">${tH} hrs · ${fDate(sd.dias[0].fecha)} – ${fDate(sd.dias[6].fecha)}</div></div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="htot">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+        <div class="hbdg ${sd.pagado?'pg':'pe'}">${sd.pagado?'Pagado':'Pendiente'}</div>
+      </div>`;
+    list.appendChild(el);
+  });
+}
+
+function renderRefTasas() {
+  const sal=TAB[nivel], h=horaTE(), ph=penHora();
+  document.getElementById('ref-tasas').innerHTML = `
+    <div class="rrow"><span>Nivel</span><span>${nivel}</span></div>
+    <div class="rrow"><span>Salario tabulado diario</span><span>$${sal.toFixed(2)}</span></div>
+    <div class="rrow"><span>Hora extra (1130) = sal÷8×2</span><span>$${h.toFixed(4)}</span></div>
+    <div class="rrow"><span>Comida (1140)</span><span>$${TASA_COMIDA.toFixed(2)} c/u</span></div>
+    <div class="rrow"><span>TE Tolerancia (1180) = h×$hora×12.3%</span><span>${(TOL_PCT*100).toFixed(1)}%</span></div>
+    <div class="rrow"><span>T. penado (1190) = h×0.5×(sal÷8)</span><span>$${ph.toFixed(4)}/hr</span></div>`;
+}
+
+function renderRef() {
+  const td=[[2,0],[4,20],[5,40],[6,60],[7,80],[8,100],[9,120],[10,140],[11,160],[12,180],[13,200],[14,220],[15,240],[16,260]];
+  document.getElementById('ref-tol').innerHTML = td.map(([h,m]) => `
+    <div class="rrow ${m===0?'na':''}">
+      <span>${h} horas</span>
+      <span>${m>0?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')} (${m} min)`:'No aplica'}</span>
+    </div>`).join('');
+  const cd=[[2,0],[4,1],[5,2],[8,2],[12,2]];
+  document.getElementById('ref-com').innerHTML = cd.map(([h,c]) => `
+    <div class="rrow ${c===0?'na':''}">
+      <span>${h}+ hrs normal · festivo/desc ≥12h</span>
+      <span>${c>0?`${c} comida${c>1?'s':''} ($${(c*TASA_COMIDA).toFixed(2)})`:'Sin comida'}</span>
+    </div>`).join('');
+  renderRefTasas();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CONTROLES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function setH(i, v) {
+  const nuevas_horas = Math.max(0, parseInt(v) || 0);
+  if (nuevas_horas > 0 && !puedeUsarSemana(semana)) {
+    document.querySelector(`#days-grid .day-card:nth-child(${i+1}) .hrs-inp`).value = 0;
+    mostrarPaywall();
+    return;
+  }
+  semData(semana).dias[i].horas = nuevas_horas;
+  render();
+}
+function setT(i, t) { semData(semana).dias[i].tipo = t; render(); }
+function cambiarSemana(d) {
+  const nueva = Math.max(1, semana + d);
+  if (d > 0 && !puedeUsarSemana(nueva)) {
+    semana = nueva;
+    render();
+    mostrarPaywall();
+    return;
+  }
+  semana = nueva;
+  render();
+}
+function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }
+function cambiarNivel() {
+  nivel = parseInt(document.getElementById('sel-nivel').value);
+  document.getElementById('chip-sal').textContent  = `$${TAB[nivel].toFixed(2)}/día`;
+  document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
+  render();
+}
+function showTab(id) {
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  ['captura','historial','referencia','soporte'].forEach((n,i) => {
+    if (n === id) document.querySelectorAll('.tab-btn')[i].classList.add('active');
+  });
+}
+function selPlan(p) {
+  planSel = p;
+  ['week','month','year'].forEach(x => {
+    document.getElementById('plan-'+x).classList.toggle('selected', x===p);
+  });
+}
+function contactarWA() {
+  const user = document.getElementById('inp-nombre').value || 'usuario';
+  const msg  = encodeURIComponent(
+    `Hola! Soy ${user}, quiero desbloquear ControlTE para seguir registrando mis semanas de tiempo extra. ¿Cómo procedo?`
+  );
+  window.open(`https://wa.me/${WA_NUM}?text=${msg}`, '_blank');
+}
+function initApp() {
+  document.getElementById('splash').classList.add('hide');
+  setTimeout(() => { document.getElementById('splash').style.display='none'; }, 400);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// INIT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const sel = document.getElementById('sel-nivel');
+Object.keys(TAB).sort((a,b) => a-b).forEach(n => {
+  const o = document.createElement('option');
+  o.value = n;
+  o.textContent = `Nivel ${n}  —  $${TAB[n].toFixed(2)}/día`;
+  if (parseInt(n) === nivel) o.selected = true;
+  sel.appendChild(o);
+});
+document.getElementById('chip-sal').textContent  = `$${TAB[nivel].toFixed(2)}/día`;
+document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
+
+// Si ya la usó antes, no mostrar splash
+if (localStorage.getItem('cte_v4')) {
+  document.getElementById('splash').style.display = 'none';
+}
+
+renderRef();
+render();
+</script>
+<!-- BOTÓN FLOTANTE SOPORTE TÉCNICO -->
+<a class="wa-float" href="https://wa.me/529616868835" target="_blank">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.528 5.855L0 24l6.335-1.524A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.667-.504-5.198-1.385l-.373-.221-3.861.929.972-3.762-.243-.387A9.953 9.953 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+  💬 Soporte técnico
+</a>
+
+</body>
+</html>
