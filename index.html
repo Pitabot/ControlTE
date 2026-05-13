@@ -618,27 +618,38 @@ function guardar() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// VALIDACIÓN DE CÓDIGO
+// JSONBIN — base de datos de códigos
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Formato del código: PLAN-CLAVE donde PLAN = W/M/Y y CLAVE = alfanumérico
-// Ejemplo: W-AB3K92 = 1 semana, M-XP7Q4R = 1 mes, Y-ZT2M8N = 1 año
-// El código lo generas tú manualmente; aquí solo validamos el formato y el plan.
-// En la versión con Google Sheets, aquí consultará tu hoja.
+const JBIN_ID  = '6a0474ba250b1311c3445ef9';
+const JBIN_KEY = '$2a$10$ppW0utPb9oiIW1mORBhvmOUl5ku2bouhhVmein6onI/EuvLqqR5jy';
+const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
+
+async function getBin() {
+  const r = await fetch(JBIN_URL + '/latest', {
+    headers: { 'X-Master-Key': JBIN_KEY }
+  });
+  const d = await r.json();
+  return d.record;
+}
+
+async function updateBin(data) {
+  await fetch(JBIN_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY },
+    body: JSON.stringify(data)
+  });
+}
 
 function parseCodigo(raw) {
   const cod = raw.trim().toUpperCase();
   const match = cod.match(/^([WMY])-([A-Z0-9]{4,8})$/);
   if (!match) return null;
   const planes = { W:'week', M:'month', Y:'year' };
-  const duraciones = {
-    week:  7   * 24 * 3600 * 1000,
-    month: 30  * 24 * 3600 * 1000,
-    year:  365 * 24 * 3600 * 1000
-  };
+  const duraciones = { week:7*24*3600*1000, month:30*24*3600*1000, year:365*24*3600*1000 };
   return { plan: planes[match[1]], duracion: duraciones[planes[match[1]]], codigo: cod };
 }
 
-function validarCodigo() {
+async function validarCodigo() {
   const raw = document.getElementById('unlock-inp').value;
   const msg = document.getElementById('unlock-msg');
   const parsed = parseCodigo(raw);
@@ -649,30 +660,61 @@ function validarCodigo() {
     return;
   }
 
-  // Verificar si ya fue usado
-  const usados = JSON.parse(localStorage.getItem('cte_usados') || '[]');
-  if (usados.includes(parsed.codigo)) {
+  msg.className = 'unlock-msg';
+  msg.textContent = '⏳ Verificando código...';
+
+  try {
+    // Consultar JSONBin
+    const bin = await getBin();
+    const codigos = bin.codigos || [];
+    const encontrado = codigos.find(c => c.codigo === parsed.codigo);
+
+    // No existe en la base de datos
+    if (!encontrado) {
+      msg.className = 'unlock-msg err';
+      msg.textContent = '❌ Código no encontrado. Contacta a soporte.';
+      return;
+    }
+
+    // Ya fue usado
+    if (encontrado.usado) {
+      msg.className = 'unlock-msg err';
+      msg.textContent = '❌ Este código ya fue utilizado en otro dispositivo.';
+      return;
+    }
+
+    // Verificar que el plan coincida
+    if (encontrado.plan !== parsed.plan) {
+      msg.className = 'unlock-msg err';
+      msg.textContent = '❌ Código inválido. Contacta a soporte.';
+      return;
+    }
+
+    // ✅ Código válido — marcarlo como usado
+    encontrado.usado       = true;
+    encontrado.fecha_uso   = new Date().toISOString();
+    encontrado.dispositivo = navigator.userAgent.slice(0, 80);
+    await updateBin(bin);
+
+    // Activar licencia local
+    const ahora = Date.now();
+    const lic = { code: parsed.codigo, plan: parsed.plan, activado: ahora, expira: ahora + parsed.duracion };
+    setLicencia(lic);
+
+    msg.className = 'unlock-msg ok';
+    const nombres = { week:'1 semana', month:'1 mes', year:'1 año' };
+    msg.textContent = `✅ ¡Activado! Acceso por ${nombres[parsed.plan]}.`;
+
+    setTimeout(() => {
+      document.getElementById('paywall').classList.remove('show');
+      actualizarEstado();
+      render();
+    }, 1500);
+
+  } catch(e) {
     msg.className = 'unlock-msg err';
-    msg.textContent = '❌ Este código ya fue utilizado.';
-    return;
+    msg.textContent = '❌ Error de conexión. Verifica tu internet e intenta de nuevo.';
   }
-
-  // Activar licencia
-  const ahora = Date.now();
-  const lic = { code: parsed.codigo, plan: parsed.plan, activado: ahora, expira: ahora + parsed.duracion };
-  setLicencia(lic);
-  usados.push(parsed.codigo);
-  localStorage.setItem('cte_usados', JSON.stringify(usados));
-
-  msg.className = 'unlock-msg ok';
-  const nombres = { week:'1 semana', month:'1 mes', year:'1 año' };
-  msg.textContent = `✅ ¡Activado! Acceso por ${nombres[parsed.plan]}.`;
-
-  setTimeout(() => {
-    document.getElementById('paywall').classList.remove('show');
-    actualizarEstado();
-    render();
-  }, 1500);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
