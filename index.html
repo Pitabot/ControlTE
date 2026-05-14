@@ -624,98 +624,96 @@ const JBIN_ID  = '6a0474ba250b1311c3445ef9';
 const JBIN_KEY = '$2a$10$ppW0utPb9oiIW1mORBhvmOUl5ku2bouhhVmein6onI/EuvLqqR5jy';
 const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
 
-async function getBin() {
-  const r = await fetch(JBIN_URL + '/latest', {
-    headers: { 'X-Master-Key': JBIN_KEY }
-  });
-  const d = await r.json();
-  return d.record;
-}
-
-async function updateBin(data) {
-  await fetch(JBIN_URL, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY },
-    body: JSON.stringify(data)
-  });
-}
-
-function parseCodigo(raw) {
-  const cod = raw.trim().toUpperCase();
-  const match = cod.match(/^([WMY])-([A-Z0-9]{4,8})$/);
-  if (!match) return null;
-  const planes = { W:'week', M:'month', Y:'year' };
-  const duraciones = { week:7*24*3600*1000, month:30*24*3600*1000, year:365*24*3600*1000 };
-  return { plan: planes[match[1]], duracion: duraciones[planes[match[1]]], codigo: cod };
-}
-
 async function validarCodigo() {
-  const raw = document.getElementById('unlock-inp').value;
+  const input = document.getElementById('unlock-inp');
   const msg = document.getElementById('unlock-msg');
-  const parsed = parseCodigo(raw);
+  const raw = input.value.trim().toUpperCase();
 
-  if (!parsed) {
-    msg.className = 'unlock-msg err';
-    msg.textContent = '❌ Código inválido. Verifica el formato.';
-    return;
-  }
-
-  msg.className = 'unlock-msg';
-  msg.textContent = '⏳ Verificando código...';
+  if (!raw) { msg.innerText = "Escribe un código."; return; }
+  msg.innerText = "Verificando...";
 
   try {
-    // Consultar JSONBin
-    const bin = await getBin();
-    const codigos = bin.codigos || [];
-    const encontrado = codigos.find(c => c.codigo === parsed.codigo);
+    const res = await fetch(JBIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
+    const data = await res.json();
+    let lista = data.record.codigos;
 
-    // No existe en la base de datos
-    if (!encontrado) {
-      msg.className = 'unlock-msg err';
-      msg.textContent = '❌ Código no encontrado. Contacta a soporte.';
-      return;
+    const index = lista.findIndex(c => c.codigo === raw);
+    const encontrado = lista[index];
+
+    if (encontrado) {
+      if (encontrado.usado) {
+        msg.className = "unlock-msg err";
+        msg.innerText = "Este código ya fue utilizado.";
+        return;
+      }
+
+      lista[index].usado = true;
+
+      await fetch(JBIN_URL, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Master-Key': JBIN_KEY 
+        },
+        body: JSON.stringify({ codigos: lista })
+      });
+
+      let dias = encontrado.plan === 'week' ? 7 : (encontrado.plan === 'month' ? 30 : 365);
+      setLicencia({
+        code: raw,
+        activado: Date.now(),
+        expira: Date.now() + (dias * 24 * 60 * 60 * 1000)
+      });
+
+      msg.className = "unlock-msg ok";
+      msg.innerText = "¡Activado con éxito!";
+      setTimeout(() => location.reload(), 1500);
+
+    } else {
+      msg.className = "unlock-msg err";
+      msg.innerText = "Código no válido.";
     }
-
-    // Ya fue usado
-    if (encontrado.usado) {
-      msg.className = 'unlock-msg err';
-      msg.textContent = '❌ Este código ya fue utilizado en otro dispositivo.';
-      return;
-    }
-
-    // Verificar que el plan coincida
-    if (encontrado.plan !== parsed.plan) {
-      msg.className = 'unlock-msg err';
-      msg.textContent = '❌ Código inválido. Contacta a soporte.';
-      return;
-    }
-
-    // ✅ Código válido — marcarlo como usado
-    encontrado.usado       = true;
-    encontrado.fecha_uso   = new Date().toISOString();
-    encontrado.dispositivo = navigator.userAgent.slice(0, 80);
-    await updateBin(bin);
-
-    // Activar licencia local
-    const ahora = Date.now();
-    const lic = { code: parsed.codigo, plan: parsed.plan, activado: ahora, expira: ahora + parsed.duracion };
-    setLicencia(lic);
-
-    msg.className = 'unlock-msg ok';
-    const nombres = { week:'1 semana', month:'1 mes', year:'1 año' };
-    msg.textContent = `✅ ¡Activado! Acceso por ${nombres[parsed.plan]}.`;
-
-    setTimeout(() => {
-      document.getElementById('paywall').classList.remove('show');
-      actualizarEstado();
-      render();
-    }, 1500);
-
-  } catch(e) {
-    msg.className = 'unlock-msg err';
-    msg.textContent = '❌ Error de conexión. Verifica tu internet e intenta de nuevo.';
+  } catch (err) {
+    msg.innerText = "Error de conexión.";
   }
 }
+
+function initApp() {
+  const splash = document.getElementById('splash');
+  if (splash) splash.classList.add('hide');
+  if (semanasUsadas() >= 2 && !licenciaActiva()) {
+    document.getElementById('paywall').classList.add('show');
+  }
+  renderNiveles();
+  renderReferencia();
+  cambiarSemana(0); 
+  actualizarUIEstado();
+}
+
+function actualizarUIEstado() {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-txt');
+  const bar = document.getElementById('free-bar');
+  if (licenciaActiva()) {
+    dot.className = "status-dot active";
+    txt.innerText = "Acceso Full";
+    if (bar) bar.style.display = 'none';
+  }
+}
+
+function contactarWA() {
+  const nombre = document.getElementById('inp-nombre').value;
+  window.open(`https://wa.me/${WA_NUM}?text=Hola, soy ${nombre}. Quiero activar ControlTE.`, '_blank');
+}
+
+function showTab(id) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  if(event) event.currentTarget.classList.add('active');
+}
+
+window.onload = () => { /* El splash se maneja con el botón */ };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CÁLCULOS CCT
@@ -1019,12 +1017,16 @@ if (localStorage.getItem('cte_v4')) {
 
 renderRef();
 render();
+
+
 </script>
+  
 <!-- BOTÓN FLOTANTE SOPORTE TÉCNICO -->
 <a class="wa-float" href="https://wa.me/529616868835" target="_blank">
   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.528 5.855L0 24l6.335-1.524A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.667-.504-5.198-1.385l-.373-.221-3.861.929.972-3.762-.243-.387A9.953 9.953 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
   💬 Soporte técnico
 </a>
+
 
 </body>
 </html>
