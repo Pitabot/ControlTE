@@ -716,15 +716,21 @@ function showTab(id) {
 window.onload = () => { /* El splash se maneja con el botón */ };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// CÁLCULOS CCT (CORREGIDOS)
+// CÁLCULOS CCT 2025-2027 (VERSIÓN FINAL UNIFICADA)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function getTolMin(horas, tipo) {
+  // Cláusula 51: No hay tolerancia en festivos < 12h
   if (tipo === 'festivo' && horas < 12) return 0;
-  return TTOL[horas] || 0;
+  const tablaTol = {
+    4: 20, 5: 40, 6: 60, 7: 80, 8: 100, 9: 120, 
+    10: 140, 11: 160, 12: 180, 13: 200, 14: 220, 15: 240, 16: 260
+  };
+  return tablaTol[horas] || 0;
 }
 
 function getComidas(horas, tipo) {
-  if (tipo === 'festivo' || tipo === 'descanso') return horas >= 12 ? 2 : 0;
+  // Cláusula 44 y Nota de Sabanas
+  if (tipo === 'festivo' || tipo === 'descanso') return horas >= 12 ? 2 : (horas >= 4 ? 1 : 0);
   if (horas >= 5) return 2;
   if (horas >= 4) return 1;
   return 0;
@@ -733,71 +739,38 @@ function getComidas(horas, tipo) {
 function calcDia(d) {
   const h = d.horas || 0;
   const t = d.tipo || 'normal';
-  const salTab = TAB[nivel];
-  const arc = 116.60;
-
-  // 1. TIEMPO EXTRA (1130)
-  const baseCalculo = salTab + (salTab * 0.60) + arc;
-  const valorHoraExtra = (baseCalculo / 8) * 2;
-  const te = Math.round((h * valorHoraExtra) * 100) / 100;
-
-  // 2. TOLERANCIA (1180)
-  const minTol = getTolMin(h, t);
-  const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
-
-  // 3. TIEMPO PENADO (1190)
-  const valorHoraPenada = (salTab / 8) + valorHoraExtra;
-  const pen = Math.round((h * 0.5 * valorHoraPenada) * 100) / 100;
-
-  // 4. COMIDAS (1140)
-  const com = getComidas(h, t);
-  const icm = Math.round((com * 187.75) * 100) / 100;
-
-  // SUBTOTAL: Suma de los 4 conceptos
-  const subTotal = Math.round((te + tet + pen + icm) * 100) / 100;
-
-  return {
-    h, t, te, com, icm, tm: minTol, tet, pen,
-    sub: h > 0 ? subTotal : 0 
-  };
-}
-function calcDia(d) {
-  const h = d.horas || 0;
-  const t = d.tipo || 'normal';
-  
-  // Detectar si es domingo para la Cláusula 52 (Prima Dominical 35%)
   const fechaObj = new Date(d.fecha + 'T12:00');
   const esDomingo = fechaObj.getDay() === 0; 
   
   const salTab = TAB[nivel];
-  const arc = 116.60; // Ayuda Renta Casa nivel 21 (ajusta este valor si es necesario)
+  const arc = 116.60; // Ayuda Renta Casa fija Nivel 21
 
   // --- 1130: TIEMPO EXTRA OCASIONAL (Cláusula 57) ---
+  // Base: Tabulado + 60% Tabulado + Renta Casa
   const baseCalculo = salTab + (salTab * 0.60) + arc;
   const valorHoraExtra = (baseCalculo / 8) * 2;
   const te = Math.round((h * valorHoraExtra) * 100) / 100;
 
-  // --- 1180: TIEMPO EXTRA TOLERANCIA (Instructivo Sabanas) ---
+  // --- 1180: TOLERANCIA ---
   const minTol = getTolMin(h, t);
   const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
 
-  // --- 1190: TIEMPO PENADO (Cláusula 57) ---
+  // --- 1190: TIEMPO PENADO ---
   const valorHoraPenada = (salTab / 8) + valorHoraExtra;
   const pen = Math.round((h * 0.5 * valorHoraPenada) * 100) / 100;
 
-  // --- 1110: PRIMA DOMINICAL (35% Cláusula 52) ---
+  // --- 1110: PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
   if (esDomingo && h > 0) {
     const salOrd = salTab + (salTab * 0.30) + arc; 
-    const valorHoraOrd = salOrd / 8;
-    primaDom = Math.round((h * valorHoraOrd * 0.35) * 100) / 100;
+    primaDom = Math.round((h * (salOrd / 8) * 0.35) * 100) / 100;
   }
 
-  // --- 1140: COMIDAS (Cláusula 44 - $187.75) ---
+  // --- 1140: COMIDAS ($187.75) ---
   const com = getComidas(h, t);
   const icm = Math.round((com * 187.75) * 100) / 100;
 
-  // Suma total del día con precisión de centavos
+  // El subtotal suma los 5 conceptos clave
   const subTotal = Math.round((te + icm + tet + pen + primaDom) * 100) / 100;
 
   return {
