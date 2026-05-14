@@ -731,15 +731,35 @@ function getComidas(horas, tipo) {
 }
 
 function calcDia(d) {
-  const h = d.horas || 0, t = d.tipo || 'normal';
-  const te = h * horaTE();
+  const h = d.horas || 0;
+  const t = d.tipo || 'normal';
+  const salTab = TAB[nivel];
+  const arc = 116.60;
+
+  // 1. TIEMPO EXTRA (1130)
+  const baseCalculo = salTab + (salTab * 0.60) + arc;
+  const valorHoraExtra = (baseCalculo / 8) * 2;
+  const te = Math.round((h * valorHoraExtra) * 100) / 100;
+
+  // 2. TOLERANCIA (1180)
+  const minTol = getTolMin(h, t);
+  const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
+
+  // 3. TIEMPO PENADO (1190)
+  const valorHoraPenada = (salTab / 8) + valorHoraExtra;
+  const pen = Math.round((h * 0.5 * valorHoraPenada) * 100) / 100;
+
+  // 4. COMIDAS (1140)
   const com = getComidas(h, t);
-  const icm = com * TASA_COMIDA;
-  const tm = getTolMin(h, t);
-  const tet = h * horaTE() * TOL_PCT;
-  const pen = h * 0.5 * penHora();
-  return { h, t, te, com, icm, tm, tet, pen, sub: h > 0 ? (te + icm + tet + pen) : 0 
-         };
+  const icm = Math.round((com * 187.75) * 100) / 100;
+
+  // SUBTOTAL: Suma de los 4 conceptos
+  const subTotal = Math.round((te + tet + pen + icm) * 100) / 100;
+
+  return {
+    h, t, te, com, icm, tm: minTol, tet, pen,
+    sub: h > 0 ? subTotal : 0 
+  };
 }
 function calcDia(d) {
   const h = d.horas || 0;
