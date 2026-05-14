@@ -301,7 +301,6 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   text-decoration: none;
 }
 .wa-float:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 10px 32px rgba(37,211,102,.55); }
-@media (max-width: 760px) {
   .days-grid { grid-template-columns: repeat(4,1fr); }
   .scards { grid-template-columns: repeat(3,1fr); }
   .ref-grid { grid-template-columns: 1fr; }
@@ -404,7 +403,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
       <strong>Descanso semanal:</strong> Tolerancia desde 4h · Comidas desde 12h
     </div>
 
-    <!-- SELECTOR NIVEL Y NOMBRE — siempre visible -->
+    <!-- SELECTOR NIVEL, NOMBRE Y JORNADA — siempre visible -->
     <div style="display:flex;gap:12px;align-items:center;background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:140px;">
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Trabajador</span>
@@ -414,6 +413,14 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);white-space:nowrap;">Nivel</span>
         <select id="sel-nivel2" onchange="document.getElementById('sel-nivel').value=this.value;cambiarNivel();"
           style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);cursor:pointer;">
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;min-width:160px;">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);white-space:nowrap;">Jornada</span>
+        <select id="sel-jornada" onchange="cambiarJornada();"
+          style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);cursor:pointer;">
+          <option value="00">Jornada 00 — Diurna</option>
+          <option value="07">Jornada 07 — Mixta</option>
         </select>
       </div>
       <div style="background:var(--blue);border-radius:8px;padding:8px 14px;text-align:center;min-width:120px;">
@@ -720,21 +727,37 @@ window.onload = () => { /* El splash se maneja con el botón */ };
 // CÁLCULOS CCT 2025-2027 (VERSIÓN FINAL UNIFICADA)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function getTolMin(horas, tipo) {
-  // Cláusula 51: No hay tolerancia en festivos < 12h
+  // Cláusula 51: No hay tolerancia en festivos < 12h (aplica J00 y J07)
   if (tipo === 'festivo' && horas < 12) return 0;
   const tablaTol = {
-    4: 20, 5: 40, 6: 60, 7: 80, 8: 100, 9: 120, 
+    4: 20, 5: 40, 6: 60, 7: 80, 8: 100, 9: 120,
     10: 140, 11: 160, 12: 180, 13: 200, 14: 220, 15: 240, 16: 260
   };
   return tablaTol[horas] || 0;
 }
 
 function getComidas(horas, tipo) {
-  // Cláusula 44 y Nota de Sabanas
-  if (tipo === 'festivo' || tipo === 'descanso') return horas >= 12 ? 2 : (horas >= 4 ? 1 : 0);
-  if (horas >= 5) return 2;
-  if (horas >= 4) return 1;
-  return 0;
+  const j = localStorage.getItem('cte_jornada') || '00';
+
+  if (tipo === 'festivo' || tipo === 'descanso') {
+    // J00 y J07 igual en festivo/descanso
+    if (horas >= 12) return 2;
+    if (horas >= 4)  return 1;
+    return 0;
+  }
+
+  // Día normal
+  if (j === '07') {
+    // Jornada 07: 2-7h = 1 comida, 8h+ = 2 comidas
+    if (horas >= 8) return 2;
+    if (horas >= 2) return 1;
+    return 0;
+  } else {
+    // Jornada 00: 2h = 1 comida, 5h+ = 2 comidas
+    if (horas >= 5) return 2;
+    if (horas >= 2) return 1;
+    return 0;
+  }
 }
 
 function calcDia(d) {
@@ -956,18 +979,39 @@ function renderRefTasas() {
 }
 
 function renderRef() {
+  const j = localStorage.getItem('cte_jornada') || '00';
   const td=[[2,0],[4,20],[5,40],[6,60],[7,80],[8,100],[9,120],[10,140],[11,160],[12,180],[13,200],[14,220],[15,240],[16,260]];
   document.getElementById('ref-tol').innerHTML = td.map(([h,m]) => `
     <div class="rrow ${m===0?'na':''}">
       <span>${h} horas</span>
       <span>${m>0?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')} (${m} min)`:'No aplica'}</span>
     </div>`).join('');
-  const cd=[[2,0],[4,1],[5,2],[8,2],[12,2]];
-  document.getElementById('ref-com').innerHTML = cd.map(([h,c]) => `
-    <div class="rrow ${c===0?'na':''}">
-      <span>${h}+ hrs normal · festivo/desc ≥12h</span>
-      <span>${c>0?`${c} comida${c>1?'s':''} ($${(c*TASA_COMIDA).toFixed(2)})`:'Sin comida'}</span>
-    </div>`).join('');
+
+  // Comidas según jornada activa
+  const TASA_COMIDA = 187.75;
+  if (j === '07') {
+    document.getElementById('ref-com').innerHTML = `
+      <div class="rbox-hd" style="background:#fff3d0;color:var(--gold);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 07 — Día normal</div>
+      <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>2 a 7 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow"><span>8 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 07 — Festivo / Descanso</div>
+      <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>4 a 11 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow"><span>12 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow na" style="font-size:11px;color:var(--red);"><span colspan="2">⚠️ Sin tolerancia en días festivos</span><span></span></div>`;
+  } else {
+    document.getElementById('ref-com').innerHTML = `
+      <div class="rbox-hd" style="background:#e8f0ff;color:var(--blue);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 00 — Día normal</div>
+      <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>2 a 4 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow"><span>5 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 00 — Festivo / Descanso</div>
+      <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>4 a 11 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow"><span>12 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow na" style="font-size:11px;color:var(--red);"><span colspan="2">⚠️ Sin tolerancia en días festivos</span><span></span></div>`;
+  }
   renderRefTasas();
 }
 
@@ -996,8 +1040,7 @@ function cambiarSemana(d) {
   semana = nueva;
   render();
 }
-function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }
-function cambiarNivel() {
+function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }function cambiarNivel() {
   nivel = parseInt(document.getElementById('sel-nivel').value);
   document.getElementById('sel-nivel2').value = nivel;
   const sal = TAB[nivel];
@@ -1049,6 +1092,10 @@ Object.keys(TAB).sort((a,b) => a-b).forEach(n => {
 document.getElementById('chip-sal').textContent  = `$${TAB[nivel].toFixed(2)}/día`;
 document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
 document.getElementById('sal-visible').textContent = `$${TAB[nivel].toFixed(2)}`;
+
+// Restaurar jornada guardada
+const jornadaGuardada = localStorage.getItem('cte_jornada') || '00';
+document.getElementById('sel-jornada').value = jornadaGuardada;
 
 // Si ya la usó antes, no mostrar splash
 if (localStorage.getItem('cte_v4')) {
