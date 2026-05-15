@@ -419,8 +419,8 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);white-space:nowrap;">Jornada</span>
         <select id="sel-jornada" onchange="cambiarJornada();"
           style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);cursor:pointer;">
-          <option value="00">Jornada 00 — Diurna</option>
-          <option value="07">Jornada 07 — Mixta</option>
+          <option value="00">Jornada 00 — L-V</option>
+          <option value="07">Jornada 07 — 6 días</option>
         </select>
       </div>
       <div style="background:var(--blue);border-radius:8px;padding:8px 14px;text-align:center;min-width:120px;">
@@ -590,9 +590,10 @@ function puedeUsarSemana(s) {
 const SEM_BASE  = 19;
 const DATE_BASE = new Date(2026, 4, 4); // lunes 4 mayo 2026 = semana 19
 
-let nivel  = parseInt(localStorage.getItem('cte_nivel')  || 21);
-let semana = parseInt(localStorage.getItem('cte_semana') || SEM_BASE);
-let datos  = JSON.parse(localStorage.getItem('cte_v4')   || '{}');
+let nivel   = parseInt(localStorage.getItem('cte_nivel')   || 21);
+let semana  = parseInt(localStorage.getItem('cte_semana')  || SEM_BASE);
+let datos   = JSON.parse(localStorage.getItem('cte_v4')    || '{}');
+let jornada = localStorage.getItem('cte_jornada') || '00';
 
 const horaTE  = () => (TAB[nivel] / 8) * 2;
 const penHora = () => TAB[nivel] / 8;
@@ -620,9 +621,10 @@ function semData(s) {
 }
 
 function guardar() {
-  localStorage.setItem('cte_v4',    JSON.stringify(datos));
-  localStorage.setItem('cte_nivel', nivel);
-  localStorage.setItem('cte_semana',semana);
+  localStorage.setItem('cte_v4',      JSON.stringify(datos));
+  localStorage.setItem('cte_nivel',   nivel);
+  localStorage.setItem('cte_semana',  semana);
+  localStorage.setItem('cte_jornada', jornada);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -737,23 +739,19 @@ function getTolMin(horas, tipo) {
 }
 
 function getComidas(horas, tipo) {
-  const j = localStorage.getItem('cte_jornada') || '00';
+  const j = jornada; // usa variable global, no localStorage
 
   if (tipo === 'festivo' || tipo === 'descanso') {
-    // J00 y J07 igual en festivo/descanso
     if (horas >= 12) return 2;
     if (horas >= 4)  return 1;
     return 0;
   }
 
-  // Día normal
   if (j === '07') {
-    // Jornada 07: 2-7h = 1 comida, 8h+ = 2 comidas
     if (horas >= 8) return 2;
     if (horas >= 2) return 1;
     return 0;
   } else {
-    // Jornada 00: 2h = 1 comida, 5h+ = 2 comidas
     if (horas >= 5) return 2;
     if (horas >= 2) return 1;
     return 0;
@@ -1040,16 +1038,16 @@ function cambiarSemana(d) {
   semana = nueva;
   render();
 }
-var jornada = localStorage.getItem('cte_jornada') || '00';
+function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }
 
 function cambiarJornada() {
   jornada = document.getElementById('sel-jornada').value;
-  localStorage.setItem('cte_jornada', jornada);
-  renderRef();
+  guardar();
   render();
+  renderRef();
 }
-  
-  function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }function cambiarNivel() {
+
+function cambiarNivel() {
   nivel = parseInt(document.getElementById('sel-nivel').value);
   document.getElementById('sel-nivel2').value = nivel;
   const sal = TAB[nivel];
@@ -1103,14 +1101,13 @@ document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
 document.getElementById('sal-visible').textContent = `$${TAB[nivel].toFixed(2)}`;
 
 // Restaurar jornada guardada
-const jornadaGuardada = localStorage.getItem('cte_jornada') || '00';
-document.getElementById('sel-jornada').value = jornadaGuardada;
+document.getElementById('sel-jornada').value = jornada;
 
 // Si ya la usó antes, no mostrar splash
 if (localStorage.getItem('cte_v4')) {
   document.getElementById('splash').style.display = 'none';
 }
-if(document.getElementById('sel-jornada')) document.getElementById('sel-jornada').value = jornada;
+
 renderRef();
 render();
 
