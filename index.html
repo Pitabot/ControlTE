@@ -1040,7 +1040,16 @@ function cambiarSemana(d) {
   semana = nueva;
   render();
 }
-function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }function cambiarNivel() {
+var jornada = localStorage.getItem('cte_jornada') || '00';
+
+function cambiarJornada() {
+  jornada = document.getElementById('sel-jornada').value;
+  localStorage.setItem('cte_jornada', jornada);
+  renderRef();
+  render();
+}
+  
+  function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }function cambiarNivel() {
   nivel = parseInt(document.getElementById('sel-nivel').value);
   document.getElementById('sel-nivel2').value = nivel;
   const sal = TAB[nivel];
@@ -1101,7 +1110,7 @@ document.getElementById('sel-jornada').value = jornadaGuardada;
 if (localStorage.getItem('cte_v4')) {
   document.getElementById('splash').style.display = 'none';
 }
-
+if(document.getElementById('sel-jornada')) document.getElementById('sel-jornada').value = jornada;
 renderRef();
 render();
 
