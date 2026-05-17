@@ -215,6 +215,8 @@ body { font-family: 'DM Sans', sans-serif; background: var(--paper); color: var(
 .day-tag.normal { background: transparent; color: transparent; }
 .hrs-inp { width: 100%; background: var(--paper); border: 1.5px solid var(--rule); border-radius: 6px; color: var(--ink); text-align: center; font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; padding: 7px 4px; outline: none; transition: border-color .15s; -moz-appearance: textfield; }
 .hrs-inp::-webkit-inner-spin-button, .hrs-inp::-webkit-outer-spin-button { -webkit-appearance: none; }
+.hrs-inp::placeholder { color: var(--muted); opacity: 1; }
+.hrs-inp::-webkit-input-placeholder { color: var(--muted); }
 .hrs-inp:focus { border-color: var(--blue2); background: var(--white); }
 .day-card.festivo .hrs-inp:focus { border-color: var(--gold); }
 .day-card.descanso .hrs-inp:focus { border-color: var(--purple); }
@@ -749,7 +751,7 @@ function getComidas(horas, tipo) {
 
   if (j === '07') {
     if (horas >= 8) return 2;
-    if (horas >= 2) return 1;
+    if (horas >= 4) return 1;
     return 0;
   } else {
     if (horas >= 5) return 2;
@@ -877,7 +879,10 @@ function render() {
       <div class="day-name">${DNOM[i]}</div>
       <div class="day-date">${fDate(d.fecha)}</div>
       <div class="day-tag ${d.tipo}">${d.tipo === 'normal' ? '·' : d.tipo}</div>
-      <input class="hrs-inp" type="number" min="0" max="24" value="${d.horas}"
+      <input class="hrs-inp" type="number" min="0" max="24"
+        ${d.horas === 0 ? 'placeholder="0"' : `value="${d.horas}"`}
+        onfocus="if(this.value==='0'||this.value===''){this.value='';}"
+        onblur="if(this.value===''||isNaN(this.value)){this.value='';setH(${i},0);}"
         oninput="setH(${i},this.value)">
       <div class="hrs-lbl">horas extra</div>
       <div class="type-row">
