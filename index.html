@@ -318,18 +318,18 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   <div class="splash-logo">💰</div>
   <div class="splash-title">Control<span>TE</span></div>
   <div class="splash-sub">by PitaBot · PEMEX · STPRM · CCT 2025–2027</div>
-  <button class="splash-btn" onclick="initApp()">Comenzar →</button>
-  <div class="splash-free">✅ 2 semanas gratis incluidas<br>Sin tarjeta de crédito requerida</div>
+  <button class="splash-btn" onclick="initApp()">Ingresar →</button>
+  <div class="splash-free">🔐 Acceso con código de activación</div>
 </div>
 
 <!-- ═══ PAYWALL ═══ -->
 <div id="paywall">
   <div class="paywall-card">
     <div class="paywall-icon">💰</div>
-    <div class="paywall-title">Versión gratuita completada</div>
+    <div class="paywall-title">Acceso requerido</div>
     <div class="paywall-sub">
-      Ya registraste tus <strong>2 semanas de prueba</strong>.<br>
-      Contáctame por WhatsApp para desbloquear el acceso completo y seguir registrando tus semanas.
+      <strong>ControlTE</strong> requiere un código de acceso.<br>
+      Contáctame por WhatsApp para obtener tu código y comenzar a usar la app.
     </div>
 
     <button class="wa-btn" onclick="contactarWA()">
@@ -387,18 +387,6 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 
   <!-- ═══ CAPTURA ═══ -->
   <div id="tab-captura" class="tab-pane active">
-
-    <!-- Barra semanas gratuitas -->
-    <div class="free-bar" id="free-bar">
-      <div class="free-bar-txt">
-        <b id="free-txt">Semanas usadas: 0 / 2</b><br>
-        <span id="free-sub">Tienes 2 semanas gratuitas disponibles</span>
-      </div>
-      <div class="free-weeks">
-        <div class="fweek free" id="fw1"></div>
-        <div class="fweek free" id="fw2"></div>
-      </div>
-    </div>
 
     <div class="notice">
       ⚠️ <strong>Festivo (CCT Cl. 139):</strong> Sin tolerancia antes de 12h · Comidas desde 12h &nbsp;|&nbsp;
@@ -573,17 +561,8 @@ function semanasUsadas() {
 }
 
 function puedeUsarSemana(s) {
-  if (licenciaActiva()) return true;
-  const d = JSON.parse(localStorage.getItem('cte_v4') || '{}');
-  const k = 's' + s;
-  // Si esta semana ya tiene datos, puede seguir editándola
-  const tieneDatos = d[k] && d[k].dias && d[k].dias.some(dia => (dia.horas||0) > 0);
-  if (tieneDatos) return true;
-  // Contar semanas distintas con datos
-  const semsConDatos = Object.keys(d).filter(k2 =>
-    d[k2].dias && d[k2].dias.some(dia => (dia.horas||0) > 0)
-  );
-  return semsConDatos.length < 2;
+  // Sin semanas gratis - siempre requiere licencia activa
+  return licenciaActiva();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -692,24 +671,31 @@ async function validarCodigo() {
 
 function initApp() {
   const splash = document.getElementById('splash');
-  if (splash) splash.classList.add('hide');
-  if (semanasUsadas() >= 2 && !licenciaActiva()) {
-    document.getElementById('paywall').classList.add('show');
+  if (splash) {
+    splash.classList.add('hide');
+    setTimeout(() => { splash.style.display = 'none'; }, 400);
+  }
+  if (!licenciaActiva()) {
+    mostrarPaywall();
+    return;
   }
   renderNiveles();
   renderReferencia();
-  cambiarSemana(0); 
+  cambiarSemana(0);
   actualizarUIEstado();
 }
 
 function actualizarUIEstado() {
   const dot = document.getElementById('status-dot');
   const txt = document.getElementById('status-txt');
-  const bar = document.getElementById('free-bar');
+  if (!dot || !txt) return;
   if (licenciaActiva()) {
-    dot.className = "status-dot active";
-    txt.innerText = "Acceso Full";
-    if (bar) bar.style.display = 'none';
+    const dias = diasRestantes();
+    dot.className = 'status-dot active';
+    txt.textContent = `✓ Activo — ${dias} días`;
+  } else {
+    dot.className = 'status-dot free';
+    txt.textContent = '🔐 Sin acceso';
   }
 }
 
@@ -741,7 +727,7 @@ function getTolMin(horas, tipo) {
 }
 
 function getComidas(horas, tipo) {
-  const j = jornada; // usa variable global, no localStorage
+  const j = jornada;
 
   if (tipo === 'festivo' || tipo === 'descanso') {
     if (horas >= 12) return 2;
@@ -750,12 +736,14 @@ function getComidas(horas, tipo) {
   }
 
   if (j === '07') {
+    // Jornada 07: 4-7h = 1 comida, 8h+ = 2 comidas
     if (horas >= 8) return 2;
     if (horas >= 4) return 1;
     return 0;
   } else {
+    // Jornada 00: 4h = 1 comida, 5h+ = 2 comidas
     if (horas >= 5) return 2;
-    if (horas >= 2) return 1;
+    if (horas >= 4) return 1;
     return 0;
   }
 }
@@ -814,36 +802,18 @@ const fTol  = m => m ? `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}` : n
 // UI ESTADO
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function actualizarEstado() {
-  const dot  = document.getElementById('status-dot');
-  const txt  = document.getElementById('status-txt');
-  const bar  = document.getElementById('free-bar');
-  const ftxt = document.getElementById('free-txt');
-  const fsub = document.getElementById('free-sub');
-  const fw1  = document.getElementById('fw1');
-  const fw2  = document.getElementById('fw2');
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-txt');
 
   if (licenciaActiva()) {
     const dias = diasRestantes();
     const lic  = getLicencia();
     const nom  = { week:'semana', month:'mes', year:'año' };
-    dot.className  = 'status-dot active';
+    dot.className   = 'status-dot active';
     txt.textContent = `✓ Activo — ${dias} días`;
-    bar.style.borderLeftColor = 'var(--green)';
-    bar.style.background = '#f0faf4';
-    ftxt.innerHTML = `<b style="color:var(--green)">✅ Licencia activa — Plan ${nom[lic.plan]}</b>`;
-    fsub.textContent = `Vence en ${dias} día${dias!==1?'s':''}.`;
-    fw1.className = 'fweek used';
-    fw2.className = 'fweek used';
   } else {
-    const usadas = semanasUsadas();
-    dot.className  = 'status-dot free';
-    txt.textContent = `Gratis · ${usadas}/2`;
-    fw1.className = `fweek ${usadas >= 1 ? 'used' + (usadas===1?' last':'') : 'free'}`;
-    fw2.className = `fweek ${usadas >= 2 ? 'used last' : 'free'}`;
-    ftxt.innerHTML = `<b>Semanas usadas: ${usadas} / 2</b>`;
-    fsub.textContent = usadas >= 2
-      ? '⛔ Límite alcanzado — activa tu plan para continuar'
-      : `Tienes ${2 - usadas} semana${2-usadas!==1?'s':''} gratuita${2-usadas!==1?'s':''} disponible${2-usadas!==1?'s':''}`;
+    dot.className   = 'status-dot free';
+    txt.textContent = '🔐 Sin acceso';
   }
 }
 
@@ -995,8 +965,8 @@ function renderRef() {
   if (j === '07') {
     document.getElementById('ref-com').innerHTML = `
       <div class="rbox-hd" style="background:#fff3d0;color:var(--gold);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 07 — Día normal</div>
-      <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
-      <div class="rrow"><span>4 a 7 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>2 a 7 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>8 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 07 — Festivo / Descanso</div>
       <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
@@ -1007,7 +977,7 @@ function renderRef() {
     document.getElementById('ref-com').innerHTML = `
       <div class="rbox-hd" style="background:#e8f0ff;color:var(--blue);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 00 — Día normal</div>
       <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
-      <div class="rrow"><span> 4 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow"><span>2 a 4 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>5 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 00 — Festivo / Descanso</div>
       <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
@@ -1084,7 +1054,13 @@ function contactarWA() {
 }
 function initApp() {
   document.getElementById('splash').classList.add('hide');
-  setTimeout(() => { document.getElementById('splash').style.display='none'; }, 400);
+  setTimeout(() => {
+    document.getElementById('splash').style.display = 'none';
+    // Si no tiene licencia activa, mostrar paywall inmediatamente
+    if (!licenciaActiva()) {
+      mostrarPaywall();
+    }
+  }, 400);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1108,9 +1084,10 @@ document.getElementById('sal-visible').textContent = `$${TAB[nivel].toFixed(2)}`
 // Restaurar jornada guardada
 document.getElementById('sel-jornada').value = jornada;
 
-// Si ya la usó antes, no mostrar splash
-if (localStorage.getItem('cte_v4')) {
+// Mostrar paywall inmediatamente si no tiene licencia
+if (!licenciaActiva()) {
   document.getElementById('splash').style.display = 'none';
+  mostrarPaywall();
 }
 
 renderRef();
