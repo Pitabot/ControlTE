@@ -318,18 +318,18 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   <div class="splash-logo">💰</div>
   <div class="splash-title">Control<span>TE</span></div>
   <div class="splash-sub">by PitaBot · PEMEX · STPRM · CCT 2025–2027</div>
-  <button class="splash-btn" onclick="initApp()">Ingresar →</button>
-  <div class="splash-free">🔐 Acceso con código de activación</div>
+  <button class="splash-btn" onclick="initApp()">Comenzar →</button>
+  <div class="splash-free">✅ 2 semanas gratis incluidas<br>Sin tarjeta de crédito requerida</div>
 </div>
 
 <!-- ═══ PAYWALL ═══ -->
 <div id="paywall">
   <div class="paywall-card">
     <div class="paywall-icon">💰</div>
-    <div class="paywall-title">Acceso requerido</div>
+    <div class="paywall-title">Versión gratuita completada</div>
     <div class="paywall-sub">
-      <strong>ControlTE</strong> requiere un código de acceso.<br>
-      Contáctame por WhatsApp para obtener tu código y comenzar a usar la app.
+      Ya registraste tus <strong>2 semanas de prueba</strong>.<br>
+      Contáctame por WhatsApp para desbloquear el acceso completo y seguir registrando tus semanas.
     </div>
 
     <button class="wa-btn" onclick="contactarWA()">
@@ -387,6 +387,18 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 
   <!-- ═══ CAPTURA ═══ -->
   <div id="tab-captura" class="tab-pane active">
+
+    <!-- Barra semanas gratuitas -->
+    <div class="free-bar" id="free-bar">
+      <div class="free-bar-txt">
+        <b id="free-txt">Semanas usadas: 0 / 2</b><br>
+        <span id="free-sub">Tienes 2 semanas gratuitas disponibles</span>
+      </div>
+      <div class="free-weeks">
+        <div class="fweek free" id="fw1"></div>
+        <div class="fweek free" id="fw2"></div>
+      </div>
+    </div>
 
     <div class="notice">
       ⚠️ <strong>Festivo (CCT Cl. 139):</strong> Sin tolerancia antes de 12h · Comidas desde 12h &nbsp;|&nbsp;
@@ -522,8 +534,8 @@ const TAB = {
 };
 // Ayuda Renta de Casa por nivel (Anexo 1, ago 2025)
 const ARC = {
-   8:63.76,  9:71.26, 10:73.24, 11:74.73, 12:77.27,
-  13:90.79, 14:101.75, 15:112.61, 16:116.52, 17:116.56,
+   8:63.76,   9:71.26,  10:73.24,  11:74.73,  12:77.27,
+  13:90.79,  14:101.75, 15:112.61, 16:116.52, 17:116.56,
   18:116.57, 19:116.58, 20:116.59, 21:116.60, 22:116.64,
   23:116.65, 24:116.66, 25:122.91, 26:129.95, 27:140.86,
   28:151.03, 29:159.68, 30:166.34, 31:166.36, 32:166.37,
@@ -573,8 +585,17 @@ function semanasUsadas() {
 }
 
 function puedeUsarSemana(s) {
-  // Sin semanas gratis - siempre requiere licencia activa
-  return licenciaActiva();
+  if (licenciaActiva()) return true;
+  const d = JSON.parse(localStorage.getItem('cte_v4') || '{}');
+  const k = 's' + s;
+  // Si esta semana ya tiene datos, puede seguir editándola
+  const tieneDatos = d[k] && d[k].dias && d[k].dias.some(dia => (dia.horas||0) > 0);
+  if (tieneDatos) return true;
+  // Contar semanas distintas con datos
+  const semsConDatos = Object.keys(d).filter(k2 =>
+    d[k2].dias && d[k2].dias.some(dia => (dia.horas||0) > 0)
+  );
+  return semsConDatos.length < 2;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -589,8 +610,8 @@ let datos   = JSON.parse(localStorage.getItem('cte_v4')    || '{}');
 let jornada = localStorage.getItem('cte_jornada') || '00';
 
 // Hora extra ocasional (1130) = (sal + 60%sal + arc) ÷ 8 × 2  (Cláusula 193)
-const horaTE  = () => ((TAB[nivel] + TAB[nivel] * 0.60 + ARC[nivel]) / 8) * 2;
-// Hora penada (1190) CCT = (sal ÷ 8) + hora_ocasional (Cláusula 193)
+const horaTE       = () => ((TAB[nivel] + TAB[nivel] * 0.60 + ARC[nivel]) / 8) * 2;
+// Hora penada CCT (1190) = (sal ÷ 8) + hora_ocasional  (Cláusula 193)
 const penHoraCCT    = () => (TAB[nivel] / 8) + horaTE();
 // Hora penada recibo = sal ÷ 8 (lo que PEMEX aplica en la práctica)
 const penHoraRecibo = () => TAB[nivel] / 8;
@@ -691,22 +712,17 @@ function initApp() {
     splash.classList.add('hide');
     setTimeout(() => { splash.style.display = 'none'; }, 400);
   }
-  if (!licenciaActiva()) {
-    mostrarPaywall();
-  }
+  if (!licenciaActiva()) mostrarPaywall();
 }
 
 function actualizarUIEstado() {
   const dot = document.getElementById('status-dot');
   const txt = document.getElementById('status-txt');
-  if (!dot || !txt) return;
+  const bar = document.getElementById('free-bar');
   if (licenciaActiva()) {
-    const dias = diasRestantes();
-    dot.className = 'status-dot active';
-    txt.textContent = `✓ Activo — ${dias} días`;
-  } else {
-    dot.className = 'status-dot free';
-    txt.textContent = '🔐 Sin acceso';
+    dot.className = "status-dot active";
+    txt.innerText = "Acceso Full";
+    if (bar) bar.style.display = 'none';
   }
 }
 
@@ -738,7 +754,7 @@ function getTolMin(horas, tipo) {
 }
 
 function getComidas(horas, tipo) {
-  const j = jornada;
+  const j = jornada; // usa variable global, no localStorage
 
   if (tipo === 'festivo' || tipo === 'descanso') {
     if (horas >= 12) return 2;
@@ -747,12 +763,11 @@ function getComidas(horas, tipo) {
   }
 
   if (j === '07') {
-    // Jornada 07: 4-7h = 1 comida, 8h+ = 2 comidas
     if (horas >= 8) return 2;
     if (horas >= 4) return 1;
     return 0;
   } else {
-    // Jornada 00: 4h = 1 comida, 5h+ = 2 comidas
+    // Jornada 00: 4h=1 comida, 5h+=2 comidas (según instructivo)
     if (horas >= 5) return 2;
     if (horas >= 4) return 1;
     return 0;
@@ -766,10 +781,10 @@ function calcDia(d, horasPrevias) {
   const esDomingo = fechaObj.getDay() === 0;
 
   const salTab = TAB[nivel];
-  const arc    = ARC[nivel]; // Ayuda Renta Casa según nivel (Anexo 1)
+  const arc    = ARC[nivel]; // Ayuda Renta Casa por nivel (Anexo 1)
 
   // --- 1130: TIEMPO EXTRA OCASIONAL (Cláusula 193) ---
-  const baseCalculo   = salTab + (salTab * 0.60) + arc;
+  const baseCalculo    = salTab + (salTab * 0.60) + arc;
   const valorHoraExtra = (baseCalculo / 8) * 2;
   const te = Math.round((h * valorHoraExtra) * 100) / 100;
 
@@ -777,16 +792,13 @@ function calcDia(d, horasPrevias) {
   const minTol = getTolMin(h, t);
   const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
 
-  // --- 1190: TIEMPO PENADO (Cláusula 193) ---
-  // Solo aplica desde la hora 13 acumulada en la semana
-  const valorHoraPenadaCCT    = (salTab / 8) + valorHoraExtra;
-  const valorHoraPenadaRecibo = salTab / 8;
+  // --- 1190: TIEMPO PENADO (desde la hora 13 acumulada en la semana) ---
   const horasAnteriores = horasPrevias || 0;
   const horasDesde13    = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
-  const penCCT    = Math.round((horasDesde13 * valorHoraPenadaCCT)    * 100) / 100;
-  const penRecibo = Math.round((horasDesde13 * valorHoraPenadaRecibo) * 100) / 100;
+  const penCCT    = Math.round((horasDesde13 * ((salTab / 8) + valorHoraExtra)) * 100) / 100;
+  const penRecibo = Math.round((horasDesde13 * (salTab / 8))                    * 100) / 100;
 
-  // --- 1110: PRIMA DOMINICAL (35%) ---
+  // --- PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
   if (esDomingo && h > 0) {
     const salOrd = salTab + (salTab * 0.30) + arc;
@@ -813,18 +825,36 @@ const fTol  = m => m ? `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}` : n
 // UI ESTADO
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function actualizarEstado() {
-  const dot = document.getElementById('status-dot');
-  const txt = document.getElementById('status-txt');
+  const dot  = document.getElementById('status-dot');
+  const txt  = document.getElementById('status-txt');
+  const bar  = document.getElementById('free-bar');
+  const ftxt = document.getElementById('free-txt');
+  const fsub = document.getElementById('free-sub');
+  const fw1  = document.getElementById('fw1');
+  const fw2  = document.getElementById('fw2');
 
   if (licenciaActiva()) {
     const dias = diasRestantes();
     const lic  = getLicencia();
     const nom  = { week:'semana', month:'mes', year:'año' };
-    dot.className   = 'status-dot active';
+    dot.className  = 'status-dot active';
     txt.textContent = `✓ Activo — ${dias} días`;
+    bar.style.borderLeftColor = 'var(--green)';
+    bar.style.background = '#f0faf4';
+    ftxt.innerHTML = `<b style="color:var(--green)">✅ Licencia activa — Plan ${nom[lic.plan]}</b>`;
+    fsub.textContent = `Vence en ${dias} día${dias!==1?'s':''}.`;
+    fw1.className = 'fweek used';
+    fw2.className = 'fweek used';
   } else {
-    dot.className   = 'status-dot free';
-    txt.textContent = '🔐 Sin acceso';
+    const usadas = semanasUsadas();
+    dot.className  = 'status-dot free';
+    txt.textContent = `Gratis · ${usadas}/2`;
+    fw1.className = `fweek ${usadas >= 1 ? 'used' + (usadas===1?' last':'') : 'free'}`;
+    fw2.className = `fweek ${usadas >= 2 ? 'used last' : 'free'}`;
+    ftxt.innerHTML = `<b>Semanas usadas: ${usadas} / 2</b>`;
+    fsub.textContent = usadas >= 2
+      ? '⛔ Límite alcanzado — activa tu plan para continuar'
+      : `Tienes ${2 - usadas} semana${2-usadas!==1?'s':''} gratuita${2-usadas!==1?'s':''} disponible${2-usadas!==1?'s':''}`;
   }
 }
 
@@ -928,7 +958,6 @@ function render() {
     <div class="scard" style="border-color:var(--gold)"><div class="scard-lbl" style="color:var(--gold)">1190 según CCT</div><div class="scard-val" style="font-size:15px;color:var(--gold)">$${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard" style="border-color:var(--red)"><div class="scard-lbl" style="color:var(--red)">1190 según recibo</div><div class="scard-val" style="font-size:15px;color:var(--red)">$${tPrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard hl"><div class="scard-lbl">Total a cobrar (CCT)</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
-    <div class="scard hl"><div class="scard-lbl">Total a cobrar</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
 
   guardar();
   renderHist();
@@ -945,7 +974,7 @@ function renderHist() {
   }
   sems.forEach(s => {
     const sd = datos['s'+s]; let tH=0, tS=0;
-    sd.dias.forEach(d => { const c=calcDia(d); tH+=c.h; tS+=c.sub; });
+    sd.dias.forEach(d => { const c=calcDia(d,0); tH+=c.h; tS+=c.sub; });
     if (tH === 0 && !sd.pagado) return;
     const el = document.createElement('div');
     el.className = `hitem ${sd.pagado?'paid':''}`;
@@ -964,8 +993,6 @@ function renderRefTasas() {
   const sal = TAB[nivel];
   const arc = ARC[nivel];
   const h   = horaTE();
-  const pCCT    = penHoraCCT();
-  const pRecibo = penHoraRecibo();
   document.getElementById('ref-tasas').innerHTML = `
     <div class="rrow"><span>Nivel</span><span>${nivel}</span></div>
     <div class="rrow"><span>Salario tabulado diario</span><span>$${sal.toFixed(2)}</span></div>
@@ -973,8 +1000,8 @@ function renderRefTasas() {
     <div class="rrow"><span>Hora extra (1130) = (sal+60%sal+arc)÷8×2</span><span>$${h.toFixed(4)}</span></div>
     <div class="rrow"><span>Comida (1140)</span><span>$${TASA_COMIDA.toFixed(2)} c/u</span></div>
     <div class="rrow"><span>TE Tolerancia (1180) = h×$hora×12.3%</span><span>${(TOL_PCT*100).toFixed(1)}%</span></div>
-    <div class="rrow" style="background:#fff8e6"><span>T. penado CCT (1190) = (sal÷8)+hora_TE · desde hr 13</span><span style="color:var(--gold)">$${pCCT.toFixed(4)}/hr</span></div>
-    <div class="rrow" style="background:#fff0f0"><span>T. penado recibo (1190) = sal÷8 · aplicado por PEMEX</span><span style="color:var(--red)">$${pRecibo.toFixed(4)}/hr</span></div>`;
+    <div class="rrow" style="background:#fff8e6"><span>T. penado CCT (1190) = (sal÷8)+hora_TE · desde hr 13</span><span style="color:var(--gold)">$${penHoraCCT().toFixed(4)}/hr</span></div>
+    <div class="rrow" style="background:#fff0f0"><span>T. penado recibo (1190) = sal÷8 · aplicado por PEMEX</span><span style="color:var(--red)">$${penHoraRecibo().toFixed(4)}/hr</span></div>`;
 }
 
 function renderRef() {
@@ -1002,7 +1029,7 @@ function renderRef() {
   } else {
     document.getElementById('ref-com').innerHTML = `
       <div class="rbox-hd" style="background:#e8f0ff;color:var(--blue);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 00 — Día normal</div>
-      <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
+      <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
       <div class="rrow"><span> 4 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>5 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 00 — Festivo / Descanso</div>
@@ -1099,10 +1126,9 @@ document.getElementById('sal-visible').textContent = `$${TAB[nivel].toFixed(2)}`
 // Restaurar jornada guardada
 document.getElementById('sel-jornada').value = jornada;
 
-// Mostrar paywall inmediatamente si no tiene licencia
-if (!licenciaActiva()) {
+// Si ya la usó antes, no mostrar splash
+if (localStorage.getItem('cte_v4')) {
   document.getElementById('splash').style.display = 'none';
-  mostrarPaywall();
 }
 
 renderRef();
