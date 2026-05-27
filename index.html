@@ -358,7 +358,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   <div class="header-fields">
     <div class="hfield">
       <span class="hfield-lbl">Trabajador</span>
-      <input id="inp-nombre" value="ERICK" oninput="guardar()">
+      <input id="inp-nombre" value=" " oninput="guardar()">
     </div>
     <div class="hfield">
       <span class="hfield-lbl">Nivel</span>
@@ -453,7 +453,6 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
           <th>1130 T.E. medido</th><th>1140 # Comidas</th><th>Importe comidas</th>
           <th>1180 TE tolerancia</th>
           <th style="color:#f5c842">1190 T.penado CCT</th>
-          <th style="color:#ffaaaa">1190 T.penado recibo</th>
           <th>Subtotal</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -907,7 +906,7 @@ function render() {
   // TABLA
   const tb = document.getElementById('tbody');
   tb.innerHTML = '';
-  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tPcct=0,tPrec=0,tS=0;
+  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tPcct=0,tS=0;
   let horasAcum = 0;
 
   sd.dias.forEach((d, i) => {
@@ -926,11 +925,10 @@ function render() {
       <td>${f$(c.icm)}</td>
       <td>${f$(c.tet)}</td>
       <td style="color:var(--gold)">${f$(c.penCCT)}</td>
-      <td style="color:var(--red)">${f$(c.penRecibo)}</td>
       <td>${c.h > 0 ? f$(c.sub) : '<span class="z">—</span>'}</td>`;
     tb.appendChild(tr);
     tH+=c.h; tTE+=c.te; tC+=c.com; tIC+=c.icm; tTM+=c.tm; tTET+=c.tet;
-    tPcct+=c.penCCT; tPrec+=c.penRecibo; tS+=c.sub;
+    tPcct+=c.penCCT; tS+=c.sub;
   });
 
   const totHHMM = fTol(tTM);
@@ -941,12 +939,11 @@ function render() {
     <td>${f$(tTE)}</td><td>${tC||'<span class="z">—</span>'}</td>
     <td>${f$(tIC)}</td><td>${f$(tTET)}</td>
     <td style="color:var(--gold)">${f$(tPcct)}</td>
-    <td style="color:var(--red)">${f$(tPrec)}</td>
     <td>${f$(tS)}</td>`;
   tb.appendChild(trT);
 
   const trG = document.createElement('tr'); trG.className = 'grow';
-  trG.innerHTML = `<td colspan="9" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190 CCT)</td><td>${f$(tS)}</td>`;
+  trG.innerHTML = `<td colspan="8" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190 CCT)</td><td>${f$(tS)}</td>`;
   tb.appendChild(trG);
 
   // CARDS
@@ -955,8 +952,7 @@ function render() {
     <div class="scard"><div class="scard-lbl">Tolerancia total</div><div class="scard-val" style="font-size:16px">${totHHMM||'—'}<span class="scard-unit">h:mm</span></div></div>
     <div class="scard" style="border-color:var(--gold);background:#fffbf0"><div class="scard-lbl" style="color:var(--gold)">🍽 Comidas semana</div><div class="scard-val" style="color:var(--gold)">${tC}<span class="scard-unit">comidas</span></div><div style="font-size:10px;color:var(--muted);margin-top:4px">$${tIC.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard"><div class="scard-lbl">T.E. medido 1130</div><div class="scard-val" style="font-size:15px">$${tTE.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
-    <div class="scard" style="border-color:var(--gold)"><div class="scard-lbl" style="color:var(--gold)">1190 según CCT</div><div class="scard-val" style="font-size:15px;color:var(--gold)">$${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
-    <div class="scard" style="border-color:var(--red)"><div class="scard-lbl" style="color:var(--red)">1190 según recibo</div><div class="scard-val" style="font-size:15px;color:var(--red)">$${tPrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard" style="border-color:var(--gold)"><div class="scard-lbl" style="color:var(--gold)">1190 T.penado CCT</div><div class="scard-val" style="font-size:15px;color:var(--gold)">$${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard hl"><div class="scard-lbl">Total a cobrar (CCT)</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
 
   guardar();
@@ -1000,8 +996,7 @@ function renderRefTasas() {
     <div class="rrow"><span>Hora extra (1130) = (sal+60%sal+arc)÷8×2</span><span>$${h.toFixed(4)}</span></div>
     <div class="rrow"><span>Comida (1140)</span><span>$${TASA_COMIDA.toFixed(2)} c/u</span></div>
     <div class="rrow"><span>TE Tolerancia (1180) = h×$hora×12.3%</span><span>${(TOL_PCT*100).toFixed(1)}%</span></div>
-    <div class="rrow" style="background:#fff8e6"><span>T. penado CCT (1190) = (sal÷8)+hora_TE · desde hr 13</span><span style="color:var(--gold)">$${penHoraCCT().toFixed(4)}/hr</span></div>
-    <div class="rrow" style="background:#fff0f0"><span>T. penado recibo (1190) = sal÷8 · aplicado por PEMEX</span><span style="color:var(--red)">$${penHoraRecibo().toFixed(4)}/hr</span></div>`;
+    <div class="rrow" style="background:#fff8e6"><span>T. penado CCT (1190) = (sal÷8)+hora_TE · desde hr 13</span><span style="color:var(--gold)">$${penHoraCCT().toFixed(4)}/hr</span></div>`;
 }
 
 function renderRef() {
