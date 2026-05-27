@@ -517,6 +517,15 @@ const TAB = {
   28:353.52, 29:367.60, 30:382.90, 31:398.51, 32:414.07,
   33:430.77, 34:448.11, 35:467.73
 };
+// Ayuda Renta de Casa por nivel (Anexo 1, ago 2025)
+const ARC = {
+   8:63.76,  9:71.26, 10:73.24, 11:74.73, 12:77.27,
+  13:90.79, 14:101.75, 15:112.61, 16:116.52, 17:116.56,
+  18:116.57, 19:116.58, 20:116.59, 21:116.60, 22:116.64,
+  23:116.65, 24:116.66, 25:122.91, 26:129.95, 27:140.86,
+  28:151.03, 29:159.68, 30:166.34, 31:166.36, 32:166.37,
+  33:166.38, 34:166.39, 35:171.83
+};
 const TASA_COMIDA = 187.75;
 const TOL_PCT     = 0.123;
 const TTOL = {2:0,4:20,5:40,6:60,7:80,8:100,9:120,10:140,
@@ -576,8 +585,12 @@ let semana  = parseInt(localStorage.getItem('cte_semana')  || SEM_BASE);
 let datos   = JSON.parse(localStorage.getItem('cte_v4')    || '{}');
 let jornada = localStorage.getItem('cte_jornada') || '00';
 
-const horaTE  = () => (TAB[nivel] / 8) * 2;
-const penHora = () => TAB[nivel] / 8;
+// Hora extra ocasional (1130) = (sal + 60%sal + arc) ÷ 8 × 2  (Cláusula 193)
+const horaTE  = () => ((TAB[nivel] + TAB[nivel] * 0.60 + ARC[nivel]) / 8) * 2;
+// Hora penada (1190) CCT = (sal ÷ 8) + hora_ocasional (Cláusula 193)
+const penHoraCCT    = () => (TAB[nivel] / 8) + horaTE();
+// Hora penada recibo = sal ÷ 8 (lo que PEMEX aplica en la práctica)
+const penHoraRecibo = () => TAB[nivel] / 8;
 
 function semInicio(s) {
   const d = new Date(DATE_BASE);
@@ -748,18 +761,17 @@ function getComidas(horas, tipo) {
   }
 }
 
-function calcDia(d) {
+function calcDia(d, horasPrevias) {
   const h = d.horas || 0;
   const t = d.tipo || 'normal';
   const fechaObj = new Date(d.fecha + 'T12:00');
-  const esDomingo = fechaObj.getDay() === 0; 
-  
-  const salTab = TAB[nivel];
-  const arc = 116.60; // Ayuda Renta Casa fija Nivel 21
+  const esDomingo = fechaObj.getDay() === 0;
 
-  // --- 1130: TIEMPO EXTRA OCASIONAL (Cláusula 57) ---
-  // Base: Tabulado + 60% Tabulado + Renta Casa
-  const baseCalculo = salTab + (salTab * 0.60) + arc;
+  const salTab = TAB[nivel];
+  const arc    = ARC[nivel]; // Ayuda Renta Casa según nivel (Anexo 1)
+
+  // --- 1130: TIEMPO EXTRA OCASIONAL (Cláusula 193) ---
+  const baseCalculo   = salTab + (salTab * 0.60) + arc;
   const valorHoraExtra = (baseCalculo / 8) * 2;
   const te = Math.round((h * valorHoraExtra) * 100) / 100;
 
@@ -767,28 +779,27 @@ function calcDia(d) {
   const minTol = getTolMin(h, t);
   const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
 
-  // --- 1190: TIEMPO PENADO ---
+  // --- 1190: TIEMPO PENADO (Cláusula 193) ---
+  // Solo aplica desde la hora 13 acumulada en la semana
   const valorHoraPenada = (salTab / 8) + valorHoraExtra;
-  const pen = Math.round((h * 0.5 * valorHoraPenada) * 100) / 100;
+  const horasAnteriores = horasPrevias || 0;
+  const horasDesde13    = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
+  const pen = Math.round((horasDesde13 * valorHoraPenada) * 100) / 100;
 
   // --- 1110: PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
   if (esDomingo && h > 0) {
-    const salOrd = salTab + (salTab * 0.30) + arc; 
+    const salOrd = salTab + (salTab * 0.30) + arc;
     primaDom = Math.round((h * (salOrd / 8) * 0.35) * 100) / 100;
   }
 
-  // --- 1140: COMIDAS ($187.75) ---
+  // --- 1140: COMIDAS ---
   const com = getComidas(h, t);
   const icm = Math.round((com * 187.75) * 100) / 100;
 
-  // El subtotal suma los 5 conceptos clave
   const subTotal = Math.round((te + icm + tet + pen + primaDom) * 100) / 100;
 
-  return {
-    h, t, te, com, icm, tm: minTol, tet, pen, primaDom, 
-    sub: h > 0 ? subTotal : 0 
-  };
+  return { h, t, te, com, icm, tm: minTol, tet, pen, primaDom, sub: h > 0 ? subTotal : 0 };
 }
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FORMATO
@@ -867,9 +878,11 @@ function render() {
   const tb = document.getElementById('tbody');
   tb.innerHTML = '';
   let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tP=0,tS=0;
+  let horasAcum = 0; // horas acumuladas en la semana para cálculo del penado
 
   sd.dias.forEach((d, i) => {
-    const c = calcDia(d);
+    const c = calcDia(d, horasAcum);
+    horasAcum += c.h;
     const tag = c.t !== 'normal' ? `<span class="tag-${c.t[0]}">[${c.t}]</span>` : '';
     const hhmm = fTol(c.tm);
     const tr = document.createElement('tr');
@@ -941,14 +954,20 @@ function renderHist() {
 }
 
 function renderRefTasas() {
-  const sal=TAB[nivel], h=horaTE(), ph=penHora();
+  const sal = TAB[nivel];
+  const arc = ARC[nivel];
+  const h   = horaTE();
+  const pCCT    = penHoraCCT();
+  const pRecibo = penHoraRecibo();
   document.getElementById('ref-tasas').innerHTML = `
     <div class="rrow"><span>Nivel</span><span>${nivel}</span></div>
     <div class="rrow"><span>Salario tabulado diario</span><span>$${sal.toFixed(2)}</span></div>
-    <div class="rrow"><span>Hora extra (1130) = sal÷8×2</span><span>$${h.toFixed(4)}</span></div>
+    <div class="rrow"><span>Ayuda renta de casa (ARC)</span><span>$${arc.toFixed(2)}</span></div>
+    <div class="rrow"><span>Hora extra (1130) = (sal+60%sal+arc)÷8×2</span><span>$${h.toFixed(4)}</span></div>
     <div class="rrow"><span>Comida (1140)</span><span>$${TASA_COMIDA.toFixed(2)} c/u</span></div>
     <div class="rrow"><span>TE Tolerancia (1180) = h×$hora×12.3%</span><span>${(TOL_PCT*100).toFixed(1)}%</span></div>
-    <div class="rrow"><span>T. penado (1190) = h×0.5×(sal÷8)</span><span>$${ph.toFixed(4)}/hr</span></div>`;
+    <div class="rrow" style="background:#fff8e6"><span>T. penado CCT (1190) = (sal÷8)+hora_TE · desde hr 13</span><span style="color:var(--gold)">$${pCCT.toFixed(4)}/hr</span></div>
+    <div class="rrow" style="background:#fff0f0"><span>T. penado recibo (1190) = sal÷8 · aplicado por PEMEX</span><span style="color:var(--red)">$${pRecibo.toFixed(4)}/hr</span></div>`;
 }
 
 function renderRef() {
