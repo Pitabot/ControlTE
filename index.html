@@ -439,7 +439,10 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
         <thead><tr>
           <th>Día</th><th>Horas</th><th>Tolerancia</th>
           <th>1130 T.E. medido</th><th>1140 # Comidas</th><th>Importe comidas</th>
-          <th>1180 TE tolerancia</th><th>1190 T. penado</th><th>Subtotal</th>
+          <th>1180 TE tolerancia</th>
+          <th style="color:#f5c842">1190 T.penado CCT</th>
+          <th style="color:#ffaaaa">1190 T.penado recibo</th>
+          <th>Subtotal</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -781,10 +784,12 @@ function calcDia(d, horasPrevias) {
 
   // --- 1190: TIEMPO PENADO (Cláusula 193) ---
   // Solo aplica desde la hora 13 acumulada en la semana
-  const valorHoraPenada = (salTab / 8) + valorHoraExtra;
+  const valorHoraPenadaCCT    = (salTab / 8) + valorHoraExtra;
+  const valorHoraPenadaRecibo = salTab / 8;
   const horasAnteriores = horasPrevias || 0;
   const horasDesde13    = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
-  const pen = Math.round((horasDesde13 * valorHoraPenada) * 100) / 100;
+  const penCCT    = Math.round((horasDesde13 * valorHoraPenadaCCT)    * 100) / 100;
+  const penRecibo = Math.round((horasDesde13 * valorHoraPenadaRecibo) * 100) / 100;
 
   // --- 1110: PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
@@ -797,9 +802,9 @@ function calcDia(d, horasPrevias) {
   const com = getComidas(h, t);
   const icm = Math.round((com * 187.75) * 100) / 100;
 
-  const subTotal = Math.round((te + icm + tet + pen + primaDom) * 100) / 100;
+  const subTotal = Math.round((te + icm + tet + penCCT + primaDom) * 100) / 100;
 
-  return { h, t, te, com, icm, tm: minTol, tet, pen, primaDom, sub: h > 0 ? subTotal : 0 };
+  return { h, t, te, com, icm, tm: minTol, tet, penCCT, penRecibo, primaDom, sub: h > 0 ? subTotal : 0 };
 }
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FORMATO
@@ -877,8 +882,8 @@ function render() {
   // TABLA
   const tb = document.getElementById('tbody');
   tb.innerHTML = '';
-  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tP=0,tS=0;
-  let horasAcum = 0; // horas acumuladas en la semana para cálculo del penado
+  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tPcct=0,tPrec=0,tS=0;
+  let horasAcum = 0;
 
   sd.dias.forEach((d, i) => {
     const c = calcDia(d, horasAcum);
@@ -895,10 +900,12 @@ function render() {
       <td>${c.com || '<span class="z">—</span>'}</td>
       <td>${f$(c.icm)}</td>
       <td>${f$(c.tet)}</td>
-      <td>${f$(c.pen)}</td>
+      <td style="color:var(--gold)">${f$(c.penCCT)}</td>
+      <td style="color:var(--red)">${f$(c.penRecibo)}</td>
       <td>${c.h > 0 ? f$(c.sub) : '<span class="z">—</span>'}</td>`;
     tb.appendChild(tr);
-    tH+=c.h; tTE+=c.te; tC+=c.com; tIC+=c.icm; tTM+=c.tm; tTET+=c.tet; tP+=c.pen; tS+=c.sub;
+    tH+=c.h; tTE+=c.te; tC+=c.com; tIC+=c.icm; tTM+=c.tm; tTET+=c.tet;
+    tPcct+=c.penCCT; tPrec+=c.penRecibo; tS+=c.sub;
   });
 
   const totHHMM = fTol(tTM);
@@ -907,11 +914,14 @@ function render() {
     <td>TOTAL SEMANA</td><td>${tH}</td>
     <td>${totHHMM ? `<b>${totHHMM}</b><span class="tol-min">${tTM} min</span>` : '<span class="z">—</span>'}</td>
     <td>${f$(tTE)}</td><td>${tC||'<span class="z">—</span>'}</td>
-    <td>${f$(tIC)}</td><td>${f$(tTET)}</td><td>${f$(tP)}</td><td>${f$(tS)}</td>`;
+    <td>${f$(tIC)}</td><td>${f$(tTET)}</td>
+    <td style="color:var(--gold)">${f$(tPcct)}</td>
+    <td style="color:var(--red)">${f$(tPrec)}</td>
+    <td>${f$(tS)}</td>`;
   tb.appendChild(trT);
 
   const trG = document.createElement('tr'); trG.className = 'grow';
-  trG.innerHTML = `<td colspan="8" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190)</td><td>${f$(tS)}</td>`;
+  trG.innerHTML = `<td colspan="9" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190 CCT)</td><td>${f$(tS)}</td>`;
   tb.appendChild(trG);
 
   // CARDS
@@ -920,7 +930,9 @@ function render() {
     <div class="scard"><div class="scard-lbl">Tolerancia total</div><div class="scard-val" style="font-size:16px">${totHHMM||'—'}<span class="scard-unit">h:mm</span></div></div>
     <div class="scard" style="border-color:var(--gold);background:#fffbf0"><div class="scard-lbl" style="color:var(--gold)">🍽 Comidas semana</div><div class="scard-val" style="color:var(--gold)">${tC}<span class="scard-unit">comidas</span></div><div style="font-size:10px;color:var(--muted);margin-top:4px">$${tIC.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard"><div class="scard-lbl">T.E. medido 1130</div><div class="scard-val" style="font-size:15px">$${tTE.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
-    <div class="scard"><div class="scard-lbl">Tol. + T.penado</div><div class="scard-val" style="font-size:15px">$${(tTET+tP).toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard" style="border-color:var(--gold)"><div class="scard-lbl" style="color:var(--gold)">1190 según CCT</div><div class="scard-val" style="font-size:15px;color:var(--gold)">$${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard" style="border-color:var(--red)"><div class="scard-lbl" style="color:var(--red)">1190 según recibo</div><div class="scard-val" style="font-size:15px;color:var(--red)">$${tPrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard hl"><div class="scard-lbl">Total a cobrar (CCT)</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
     <div class="scard hl"><div class="scard-lbl">Total a cobrar</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
 
   guardar();
