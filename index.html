@@ -753,22 +753,23 @@ function getTolMin(horas, tipo) {
 }
 
 function getComidas(horas, tipo) {
-  const j = jornada; // usa variable global, no localStorage
+  const j = jornada;
 
   if (tipo === 'festivo' || tipo === 'descanso') {
     if (horas >= 12) return 2;
-    if (horas >= 4)  return 1;
+    if (horas >= 2)  return 1;
     return 0;
   }
 
   if (j === '07') {
+    // Jornada 07: 2h=1 comida, 8h+=2 comidas
     if (horas >= 8) return 2;
-    if (horas >= 4) return 1;
+    if (horas >= 2) return 1;
     return 0;
   } else {
-    // Jornada 00: 4h=1 comida, 5h+=2 comidas (según instructivo)
+    // Jornada 00: 2h=1 comida, 5h+=2 comidas
     if (horas >= 5) return 2;
-    if (horas >= 4) return 1;
+    if (horas >= 2) return 1;
     return 0;
   }
 }
@@ -950,7 +951,7 @@ function render() {
   document.getElementById('scards').innerHTML = `
     <div class="scard"><div class="scard-lbl">Total horas</div><div class="scard-val">${tH}<span class="scard-unit">hrs</span></div></div>
     <div class="scard"><div class="scard-lbl">Tolerancia total</div><div class="scard-val" style="font-size:16px">${totHHMM||'—'}<span class="scard-unit">h:mm</span></div></div>
-    <div class="scard" style="border-color:var(--gold);background:#fffbf0"><div class="scard-lbl" style="color:var(--gold)">🍽 Comidas semana</div><div class="scard-val" style="color:var(--gold)">${tC}<span class="scard-unit">comidas</span></div><div style="font-size:10px;color:var(--muted);margin-top:4px">$${tIC.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard" style="border-color:var(--gold);background:#fffbf0"><div class="scard-lbl" style="color:var(--gold)">🍽 Comidas semana</div><div class="scard-val" style="color:var(--gold)">${tC}<span class="scard-unit">comidas</span></div><div style="font-size:10px;color:var(--red);font-weight:700;margin-top:4px">$${tIC.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard"><div class="scard-lbl">T.E. medido 1130</div><div class="scard-val" style="font-size:15px">$${tTE.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard" style="border-color:var(--gold)"><div class="scard-lbl" style="color:var(--gold)">1190 T.penado CCT</div><div class="scard-val" style="font-size:15px;color:var(--gold)">$${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard hl"><div class="scard-lbl">Total a cobrar (CCT)</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
@@ -1013,23 +1014,23 @@ function renderRef() {
   if (j === '07') {
     document.getElementById('ref-com').innerHTML = `
       <div class="rbox-hd" style="background:#fff3d0;color:var(--gold);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 07 — Día normal</div>
-      <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
-      <div class="rrow"><span>4 a 7 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>2 a 7 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>8 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 07 — Festivo / Descanso</div>
-      <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
-      <div class="rrow"><span>4 a 11 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>2 a 11 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>12 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow na" style="font-size:11px;color:var(--red);"><span colspan="2">⚠️ Sin tolerancia en días festivos</span><span></span></div>`;
   } else {
     document.getElementById('ref-com').innerHTML = `
       <div class="rbox-hd" style="background:#e8f0ff;color:var(--blue);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 00 — Día normal</div>
       <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
-      <div class="rrow"><span> 4 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow"><span>2 a 4 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>5 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 00 — Festivo / Descanso</div>
-      <div class="rrow na"><span>Menos de 4 hrs</span><span>Sin comida</span></div>
-      <div class="rrow"><span>4 a 11 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
+      <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
+      <div class="rrow"><span>2 a 11 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>12 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow na" style="font-size:11px;color:var(--red);"><span colspan="2">⚠️ Sin tolerancia en días festivos</span><span></span></div>`;
   }
