@@ -961,6 +961,11 @@ function render() {
   renderRefTasas();
 }
 
+function setCatorcena(s, val) {
+  datos['s'+s].catorcena = parseInt(val) || 0;
+  guardar();
+}
+
 function renderHist() {
   const list = document.getElementById('hlist');
   list.innerHTML = '';
@@ -973,15 +978,36 @@ function renderHist() {
     const sd = datos['s'+s]; let tH=0, tS=0;
     sd.dias.forEach(d => { const c=calcDia(d,0); tH+=c.h; tS+=c.sub; });
     if (tH === 0 && !sd.pagado) return;
+
+    // Opciones de catorcena 1-26
+    const catOpts = `<option value="0">-- Catorcena --</option>` +
+      Array.from({length:26}, (_,i) => {
+        const n = i+1;
+        const sel = (sd.catorcena === n) ? 'selected' : '';
+        return `<option value="${n}" ${sel}>Catorcena ${String(n).padStart(2,'0')}</option>`;
+      }).join('');
+
     const el = document.createElement('div');
     el.className = `hitem ${sd.pagado?'paid':''}`;
-    el.onclick = () => { semana=s; showTab('captura'); render(); };
     el.innerHTML = `
-      <div><div class="hwk">Semana ${s}</div><div class="hdet">${tH} hrs · ${fDate(sd.dias[0].fecha)} – ${fDate(sd.dias[6].fecha)}</div></div>
-      <div style="display:flex;gap:12px;align-items:center">
+      <div style="flex:1">
+        <div class="hwk">Semana ${s}</div>
+        <div class="hdet">${tH} hrs · ${fDate(sd.dias[0].fecha)} – ${fDate(sd.dias[6].fecha)}</div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:8px;">
+          <select onchange="setCatorcena(${s},this.value)" onclick="event.stopPropagation()"
+            style="background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:5px 8px;font-size:11px;font-family:'DM Sans',sans-serif;color:var(--ink);outline:none;cursor:pointer;">
+            ${catOpts}
+          </select>
+          ${sd.catorcena ? `<span style="font-size:10px;font-weight:700;color:var(--blue)">✓ Cat. ${String(sd.catorcena).padStart(2,'0')}</span>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
         <div class="htot">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
         <div class="hbdg ${sd.pagado?'pg':'pe'}">${sd.pagado?'Pagado':'Pendiente'}</div>
       </div>`;
+    el.querySelector('div').addEventListener('click', (e) => {
+      if (e.target.tagName !== 'SELECT') { semana=s; showTab('captura'); render(); }
+    });
     list.appendChild(el);
   });
 }
