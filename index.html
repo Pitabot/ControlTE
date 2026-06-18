@@ -368,6 +368,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   <div class="header-right">
     <div class="chip">Salario: <b id="chip-sal">—</b></div>
     <div class="chip">Hora TE: <b id="chip-hora">—</b></div>
+    <span id="sync-status" style="font-size:10px;color:var(--muted,#888);margin-right:6px;"></span>
     <div class="status-badge" onclick="verEstado()" id="status-badge">
       <div class="status-dot free" id="status-dot"></div>
       <span id="status-txt">Gratis</span>
@@ -409,7 +410,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
     <div style="display:flex;gap:12px;align-items:center;background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:140px;">
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Trabajador</span>
-        <input id="inp-nombre2" style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);" value=" " oninput="document.getElementById('inp-nombre').value=this.value;guardar()">
+        <input id="inp-nombre2" style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);" value="ERICK" oninput="document.getElementById('inp-nombre').value=this.value;guardar()">
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex:2;min-width:200px;">
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);white-space:nowrap;">Nivel</span>
@@ -452,7 +453,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
           <th>Día</th><th>Horas</th><th>Tolerancia</th>
           <th>1130 T.E. medido</th><th>1140 # Comidas</th><th>Importe comidas</th>
           <th>1180 TE tolerancia</th>
-          <th>1190 T.penado</th>
+          <th style="color:#f5c842">1190 T.penado CCT</th>
           <th>Subtotal</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -637,20 +638,110 @@ function semData(s) {
   return datos[k];
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// JSONBIN — base de datos de códigos (constantes movidas arriba)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const JBIN_ID  = '6a0474ba250b1311c3445ef9';
+const JBIN_KEY = '$2a$10$ppW0utPb9oiIW1mORBhvmOUl5ku2bouhhVmein6onI/EuvLqqR5jy';
+const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
+
 function guardar() {
   localStorage.setItem('cte_v4',      JSON.stringify(datos));
   localStorage.setItem('cte_nivel',   nivel);
   localStorage.setItem('cte_semana',  semana);
   localStorage.setItem('cte_jornada', jornada);
+  syncCloudDebounced();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// JSONBIN — base de datos de códigos
+// SINCRONIZACIÓN EN LA NUBE — respaldo automático
+// Bin separado del de códigos, un registro por usuario
+// identificado por su código de licencia activado.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const JBIN_ID  = '6a30b258da38895dfec72c1e';
-const JBIN_KEY = '$2a$10$9VfaQRuaCX9fyS6yiO1dhuh5DeDt89523dzWLH/.6jPYvy3wOcPv.';
-const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
+const SYNC_BIN_ID  = '6a0474ba250b1311c3445ef9_DATOS'; // ⚠️ reemplazar por el ID real del bin de datos
+const SYNC_BIN_URL = `https://api.jsonbin.io/v3/b/${SYNC_BIN_ID}`;
 
+let syncTimer = null;
+function syncCloudDebounced() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncToCloud, 2000); // espera 2s de inactividad antes de subir
+}
+
+function getUserKey() {
+  // Usa el código de licencia activo como identificador único del usuario.
+  // Si no hay licencia (modo prueba), usa un ID local generado una sola vez.
+  const lic = JSON.parse(localStorage.getItem('cte_lic') || 'null');
+  if (lic && lic.code) return lic.code;
+  let anon = localStorage.getItem('cte_anon_id');
+  if (!anon) {
+    anon = 'ANON-' + Math.random().toString(36).slice(2, 10).toUpperCase();
+    localStorage.setItem('cte_anon_id', anon);
+  }
+  return anon;
+}
+
+async function syncToCloud() {
+  try {
+    const userKey = getUserKey();
+    const res = await fetch(SYNC_BIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
+    const data = await res.json();
+    const registro = (data.record && data.record.usuarios) ? data.record.usuarios : {};
+
+    registro[userKey] = {
+      datos, nivel, semana, jornada,
+      actualizado: Date.now()
+    };
+
+    await fetch(SYNC_BIN_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY },
+      body: JSON.stringify({ usuarios: registro })
+    });
+    setSyncStatus('ok');
+  } catch (e) {
+    setSyncStatus('error');
+  }
+}
+
+async function restaurarDesdeNube() {
+  try {
+    const userKey = getUserKey();
+    const res = await fetch(SYNC_BIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
+    const data = await res.json();
+    const registro = (data.record && data.record.usuarios) ? data.record.usuarios : {};
+    const mio = registro[userKey];
+    if (mio && mio.datos) {
+      datos   = mio.datos;
+      nivel   = mio.nivel   || nivel;
+      semana  = mio.semana  || semana;
+      jornada = mio.jornada || jornada;
+      localStorage.setItem('cte_v4',      JSON.stringify(datos));
+      localStorage.setItem('cte_nivel',   nivel);
+      localStorage.setItem('cte_semana',  semana);
+      localStorage.setItem('cte_jornada', jornada);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+function setSyncStatus(estado) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  if (estado === 'ok') {
+    el.textContent = '☁️ Respaldado';
+    el.style.color = 'var(--blue, #1A3A6B)';
+  } else {
+    el.textContent = '⚠️ Sin conexión — se reintentará';
+    el.style.color = 'var(--red, #B52B27)';
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VALIDACIÓN DE CÓDIGOS DE ACCESO
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function validarCodigo() {
   const input = document.getElementById('unlock-inp');
   const msg = document.getElementById('unlock-msg');
@@ -705,8 +796,21 @@ async function validarCodigo() {
   }
 }
 
-function initApp() {
+async function initApp() {
   const splash = document.getElementById('splash');
+
+  // Si no hay datos locales (caché borrado), intenta restaurar desde la nube
+  const sinDatosLocales = Object.keys(datos).length === 0;
+  if (sinDatosLocales) {
+    const restaurado = await restaurarDesdeNube();
+    if (restaurado) {
+      cambiarSemana(0);
+    }
+  } else {
+    // Si ya hay datos, sube un respaldo silencioso al cargar
+    syncCloudDebounced();
+  }
+
   if (splash) {
     splash.classList.add('hide');
     setTimeout(() => { splash.style.display = 'none'; }, 400);
@@ -792,14 +896,11 @@ function calcDia(d, horasPrevias) {
   const minTol = getTolMin(h, t);
   const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
 
-  // --- 1190: TIEMPO PENADO ---
-  const horasAnteriores  = horasPrevias || 0;
-  // Fórmula RH (recibo): penado desde hora 17 = (sal÷8) × (horas - 17)
-  const horasDesde17 = Math.max(0, (horasAnteriores + h) - 17) - Math.max(0, horasAnteriores - 17);
-  const penRecibo = Math.round((horasDesde17 * (salTab / 8)) * 100) / 100;
-  // Fórmula CCT (Cláusula 193): penado desde hora 13 = (sal÷8 + hora_TE) × (horas - 12)
-  const horasDesde13 = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
-  const penCCT = Math.round((horasDesde13 * ((salTab / 8) + valorHoraExtra)) * 100) / 100;
+  // --- 1190: TIEMPO PENADO (desde la hora 13 acumulada en la semana) ---
+  const horasAnteriores = horasPrevias || 0;
+  const horasDesde13    = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
+  const penCCT    = Math.round((horasDesde13 * ((salTab / 8) + valorHoraExtra)) * 100) / 100;
+  const penRecibo = Math.round((horasDesde13 * (salTab / 8))                    * 100) / 100;
 
   // --- PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
@@ -812,8 +913,7 @@ function calcDia(d, horasPrevias) {
   const com = getComidas(h, t);
   const icm = Math.round((com * 187.75) * 100) / 100;
 
-  // Subtotal usa 1190 del RECIBO (no CCT)
-  const subTotal = Math.round((te + icm + tet + penRecibo + primaDom) * 100) / 100;
+  const subTotal = Math.round((te + icm + tet + penCCT + primaDom) * 100) / 100;
 
   return { h, t, te, com, icm, tm: minTol, tet, penCCT, penRecibo, primaDom, sub: h > 0 ? subTotal : 0 };
 }
@@ -911,7 +1011,7 @@ function render() {
   // TABLA
   const tb = document.getElementById('tbody');
   tb.innerHTML = '';
-  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tPcct=0,tPrec=0,tS=0;
+  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tPcct=0,tS=0;
   let horasAcum = 0;
 
   sd.dias.forEach((d, i) => {
@@ -929,14 +1029,11 @@ function render() {
       <td>${c.com || '<span class="z">—</span>'}</td>
       <td>${f$(c.icm)}</td>
       <td>${f$(c.tet)}</td>
-      <td>${c.penRecibo > 0 || c.penCCT > 0 ? `
-        <span style="font-weight:600">${f$(c.penRecibo)}</span>
-        ${c.penCCT > 0 ? `<span style="display:block;font-size:10px;color:var(--gold)">CCT: ${f$(c.penCCT)}</span>` : ''}
-      ` : '<span class="z">—</span>'}</td>
+      <td style="color:var(--gold)">${f$(c.penCCT)}</td>
       <td>${c.h > 0 ? f$(c.sub) : '<span class="z">—</span>'}</td>`;
     tb.appendChild(tr);
     tH+=c.h; tTE+=c.te; tC+=c.com; tIC+=c.icm; tTM+=c.tm; tTET+=c.tet;
-    tPcct+=c.penCCT; tPrec+=c.penRecibo; tS+=c.sub;
+    tPcct+=c.penCCT; tS+=c.sub;
   });
 
   const totHHMM = fTol(tTM);
@@ -946,15 +1043,12 @@ function render() {
     <td>${totHHMM ? `<b>${totHHMM}</b><span class="tol-min">${tTM} min</span>` : '<span class="z">—</span>'}</td>
     <td>${f$(tTE)}</td><td>${tC||'<span class="z">—</span>'}</td>
     <td>${f$(tIC)}</td><td>${f$(tTET)}</td>
-    <td>
-      <span style="font-weight:600">${f$(tPrec)}</span>
-      ${tPcct > 0 ? `<span style="display:block;font-size:10px;color:var(--gold)">CCT: ${f$(tPcct)}</span>` : ''}
-    </td>
+    <td style="color:var(--gold)">${f$(tPcct)}</td>
     <td>${f$(tS)}</td>`;
   tb.appendChild(trT);
 
   const trG = document.createElement('tr'); trG.className = 'grow';
-  trG.innerHTML = `<td colspan="8" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190)</td><td>${f$(tS)}</td>`;
+  trG.innerHTML = `<td colspan="8" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190 CCT)</td><td>${f$(tS)}</td>`;
   tb.appendChild(trG);
 
   // CARDS
@@ -963,12 +1057,8 @@ function render() {
     <div class="scard"><div class="scard-lbl">Tolerancia total</div><div class="scard-val" style="font-size:16px">${totHHMM||'—'}<span class="scard-unit">h:mm</span></div></div>
     <div class="scard" style="border-color:var(--gold);background:#fffbf0"><div class="scard-lbl" style="color:var(--gold)">🍽 Comidas semana</div><div class="scard-val" style="color:var(--gold)">${tC}<span class="scard-unit">comidas</span></div><div style="font-size:10px;color:var(--red);font-weight:700;margin-top:4px">$${tIC.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard"><div class="scard-lbl">T.E. medido 1130</div><div class="scard-val" style="font-size:15px">$${tTE.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
-    <div class="scard" style="border-color:var(--blue2)">
-      <div class="scard-lbl">1190 T.penado</div>
-      <div class="scard-val" style="font-size:15px">$${tPrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
-      ${tPcct > 0 ? `<div style="font-size:10px;color:var(--gold);margin-top:3px">CCT: $${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>` : ''}
-    </div>
-    <div class="scard hl"><div class="scard-lbl">Total a cobrar</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
+    <div class="scard" style="border-color:var(--gold)"><div class="scard-lbl" style="color:var(--gold)">1190 T.penado CCT</div><div class="scard-val" style="font-size:15px;color:var(--gold)">$${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard hl"><div class="scard-lbl">Total a cobrar (CCT)</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
 
   guardar();
   renderHist();
