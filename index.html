@@ -380,6 +380,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 <div class="tabs-bar">
   <div class="tab-btn active" onclick="showTab('captura')">📋 Captura</div>
   <div class="tab-btn" onclick="showTab('historial')">📊 Historial</div>
+  <div class="tab-btn" onclick="showTab('cotejador')">🔍 Cotejador</div>
   <div class="tab-btn" onclick="showTab('referencia')">📖 Referencia</div>
   <div class="tab-btn" onclick="showTab('soporte')">💬 Soporte</div>
 </div>
@@ -465,6 +466,79 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   <div id="tab-historial" class="tab-pane">
     <div class="sec-lbl">Semanas registradas</div>
     <div id="hlist"></div>
+  </div>
+
+  <!-- ═══ COTEJADOR ═══ -->
+  <div id="tab-cotejador" class="tab-pane">
+
+    <div style="background:#e8f0ff;border:1.5px solid #c5d8f5;border-left:3px solid var(--blue2);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--blue);line-height:1.7;margin-bottom:20px;">
+      <strong>¿Cómo funciona?</strong> Ingresa los montos y la fecha de tu recibo de nómina.
+      La calculadora decodifica cuántas horas, comidas y tiempo penado representan esos montos,
+      y los coteja con las semanas registradas en tu historial para verificar si coinciden.
+    </div>
+
+    <div class="sec-lbl">Datos del recibo</div>
+    <div style="background:var(--white);border:1.5px solid var(--rule);border-radius:12px;padding:20px;box-shadow:var(--shadow);margin-bottom:16px;">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Fecha del recibo / catorcena</label>
+          <input type="date" id="cot-fecha" style="background:var(--paper);border:1.5px solid var(--rule);border-radius:7px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;color:var(--ink);outline:none;transition:border-color .15s;">
+          <span style="font-size:10px;color:var(--muted);">Fecha de pago o inicio de catorcena</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Nivel (usa el configurado en la app)</label>
+          <div style="background:var(--blue);border-radius:8px;padding:10px 14px;text-align:center;">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.6);">Nivel activo</div>
+            <div id="cot-nivel-display" style="font-family:'DM Mono',monospace;font-size:18px;font-weight:500;color:#7dd3fc;margin-top:2px;">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">1130 T.E. medido ($)</label>
+          <input type="number" id="cot-1130" placeholder="0.00" min="0" step="0.01" style="background:var(--paper);border:1.5px solid var(--rule);border-radius:7px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;color:var(--ink);outline:none;">
+          <span style="font-size:10px;color:var(--muted);">Tiempo extraordinario</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">1140 Comidas ($)</label>
+          <input type="number" id="cot-1140" placeholder="0.00" min="0" step="0.01" style="background:var(--paper);border:1.5px solid var(--rule);border-radius:7px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;color:var(--ink);outline:none;">
+          <span style="font-size:10px;color:var(--muted);">$187.75 por comida</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">1180 TE Tolerancia ($)</label>
+          <input type="number" id="cot-1180" placeholder="0.00" min="0" step="0.01" style="background:var(--paper);border:1.5px solid var(--rule);border-radius:7px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;color:var(--ink);outline:none;">
+          <span style="font-size:10px;color:var(--muted);">Tiempo extra tolerancia</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">1190 T. penado ($)</label>
+          <input type="number" id="cot-1190" placeholder="0.00" min="0" step="0.01" style="background:var(--paper);border:1.5px solid var(--rule);border-radius:7px;padding:9px 12px;font-size:13px;font-family:'DM Mono',monospace;color:var(--ink);outline:none;">
+          <span style="font-size:10px;color:var(--muted);">Tiempo penado CCT</span>
+        </div>
+      </div>
+
+      <button onclick="cotejadorCalc()" style="width:100%;padding:14px;background:var(--blue);color:#fff;border:none;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;">
+        🔍 Decodificar y cotejar
+      </button>
+    </div>
+
+    <div id="cot-resultado" style="display:none;">
+
+      <div class="sec-lbl">Decodificación del recibo</div>
+      <div style="margin-bottom:20px;">
+        <div style="background:var(--blue);color:#fff;border-radius:10px 10px 0 0;padding:14px 18px;font-size:12px;font-weight:700;" id="cot-res-header">Resultado</div>
+        <div style="background:var(--white);border:1.5px solid var(--rule);border-top:none;border-radius:0 0 10px 10px;overflow:hidden;">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);" id="cot-decode-grid"></div>
+        </div>
+      </div>
+
+      <div id="cot-tol-note" style="display:none;background:var(--cream);border-radius:7px;padding:10px 14px;font-size:11px;color:var(--mid);line-height:1.6;margin-bottom:16px;"></div>
+
+      <div class="sec-lbl">Cotejo con historial</div>
+      <div id="cot-cotejo-area"></div>
+
+    </div>
   </div>
 
   <!-- ═══ REFERENCIA ═══ -->
@@ -641,8 +715,8 @@ function semData(s) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // JSONBIN — base de datos de códigos (constantes movidas arriba)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const JBIN_ID  = '6a30b258da38895dfec72c1e';
-const JBIN_KEY = '$2a$10$3E2kLNvPGqY3lb/WE.4o7uXawL1DYruxuYexxv0RXnagND.XprhAG';
+const JBIN_ID  = '6a0474ba250b1311c3445ef9';
+const JBIN_KEY = '$2a$10$ppW0utPb9oiIW1mORBhvmOUl5ku2bouhhVmein6onI/EuvLqqR5jy';
 const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
 
 function guardar() {
@@ -658,7 +732,7 @@ function guardar() {
 // Bin separado del de códigos, un registro por usuario
 // identificado por su código de licencia activado.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SYNC_BIN_ID  = '6a34089ef5f4af5e29095b02'; // ⚠️ reemplazar por el ID real del bin de datos
+const SYNC_BIN_ID  = '6a34089ef5f4af5e29095b02';
 const SYNC_BIN_URL = `https://api.jsonbin.io/v3/b/${SYNC_BIN_ID}`;
 
 let syncTimer = null;
@@ -1214,9 +1288,10 @@ function showTab(id) {
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
-  ['captura','historial','referencia','soporte'].forEach((n,i) => {
+  ['captura','historial','cotejador','referencia','soporte'].forEach((n,i) => {
     if (n === id) document.querySelectorAll('.tab-btn')[i].classList.add('active');
   });
+  if (id === 'cotejador') cotejadorInit();
 }
 function selPlan(p) {
   planSel = p;
@@ -1231,6 +1306,238 @@ function contactarWA() {
   );
   window.open(`https://wa.me/${WA_NUM}?text=${msg}`, '_blank');
 }
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COTEJADOR DE RECIBO
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function cotejadorInit() {
+  // Mostrar nivel activo
+  document.getElementById('cot-nivel-display').textContent = `Nivel ${nivel} — $${TAB[nivel].toFixed(2)}/día`;
+  // Fecha de hoy por defecto si está vacía
+  if (!document.getElementById('cot-fecha').value) {
+    document.getElementById('cot-fecha').value = new Date().toISOString().slice(0, 10);
+  }
+}
+
+function cotejadorDecodificar(niv, m1130, m1140, m1180, m1190) {
+  const hte      = horaTE(niv);
+  const penHrRec = TAB[niv] / 8;
+  const penHrCCT = penHrRec + hte;
+
+  const horas_1130        = m1130 > 0 ? Math.round((m1130 / hte) * 100) / 100 : 0;
+  const comidas_exactas   = m1140 > 0 ? m1140 / TASA_COMIDA : 0;
+  const comidas           = Math.round(comidas_exactas);
+  const horas_tol         = m1180 > 0 ? Math.round((m1180 / hte) * 100) / 100 : 0;
+  const min_tol           = m1180 > 0 ? Math.round((m1180 / hte) * 60 * 10) / 10 : 0;
+  const horas_pen_recibo  = m1190 > 0 ? Math.round((m1190 / penHrRec) * 100) / 100 : 0;
+  const horas_pen_cct     = m1190 > 0 ? Math.round((m1190 / penHrCCT) * 100) / 100 : 0;
+
+  return { horas_1130, comidas, comidas_exactas, horas_tol, min_tol, horas_pen_recibo, horas_pen_cct, tasa_hora: hte, penHrRec, penHrCCT };
+}
+
+function cotejadorCalcSemana(sd, niv) {
+  let tH=0, tTE=0, tC=0, tIC=0, tTET=0, tPcct=0, tPrec=0, horasAcum=0;
+  const jornada_local = localStorage.getItem('cte_jornada') || '00';
+  sd.dias.forEach(d => {
+    const h = d.horas || 0;
+    const t = d.tipo || 'normal';
+    const sal = TAB[niv]; const arc = ARC[niv];
+    const baseCalculo = sal + (sal * 0.60) + arc;
+    const vhe = (baseCalculo / 8) * 2;
+    const te = Math.round((h * vhe) * 100) / 100;
+    // tolerancia
+    const TTOL = {4:20,5:40,6:60,7:80,8:100,9:120,10:140,11:160,12:180,13:200,14:220,15:240,16:260};
+    let minTol = 0;
+    if (!(t === 'festivo' && h < 12)) minTol = TTOL[h] || 0;
+    const tet = Math.round(((minTol/60) * vhe) * 100) / 100;
+    // comidas
+    let com = 0;
+    if (t === 'festivo' || t === 'descanso') {
+      if (h >= 12) com = 2; else if (h >= 2) com = 1;
+    } else if (jornada_local === '07') {
+      if (h >= 8) com = 2; else if (h >= 2) com = 1;
+    } else {
+      if (h >= 5) com = 2; else if (h >= 2) com = 1;
+    }
+    const icm = Math.round((com * TASA_COMIDA) * 100) / 100;
+    // penado
+    const horasDesde13 = Math.max(0, (horasAcum + h) - 12) - Math.max(0, horasAcum - 12);
+    const penCCT    = Math.round((horasDesde13 * ((sal/8) + vhe)) * 100) / 100;
+    const penRecibo = Math.round((horasDesde13 * (sal/8)) * 100) / 100;
+    horasAcum += h;
+    tH+=h; tTE+=te; tC+=com; tIC+=icm; tTET+=tet; tPcct+=penCCT; tPrec+=penRecibo;
+  });
+  return { horas:tH, te:Math.round(tTE*100)/100, comidas:tC, ic:Math.round(tIC*100)/100, tol:Math.round(tTET*100)/100, penCCT:Math.round(tPcct*100)/100, penRecibo:Math.round(tPrec*100)/100 };
+}
+
+function horaTE(niv) {
+  const n = niv !== undefined ? niv : nivel;
+  return ((TAB[n] + TAB[n] * 0.60 + ARC[n]) / 8) * 2;
+}
+
+function cotejadorSemanas(fecha) {
+  const datos = JSON.parse(localStorage.getItem('cte_v4') || '{}');
+  const fd = fecha ? new Date(fecha + 'T12:00') : null;
+  const res = [];
+  Object.keys(datos).forEach(k => {
+    const sd = datos[k];
+    if (!sd.dias || sd.dias.length === 0) return;
+    const tH = sd.dias.reduce((s,d) => s+(d.horas||0), 0);
+    if (tH === 0 && !sd.pagado) return;
+    const ini = new Date(sd.dias[0].fecha + 'T12:00');
+    const fin = new Date(sd.dias[6].fecha + 'T12:00');
+    let tipo = 'sin_fecha';
+    if (fd) {
+      if (fd >= ini && fd <= fin) tipo = 'semana';
+      else if (Math.abs((fd - ini) / 86400000) <= 28) tipo = 'cercana';
+      else return;
+    }
+    res.push({ key:k, num:parseInt(k.slice(1)), sd, ini, fin, tipo });
+  });
+  res.sort((a,b) => {
+    if (a.tipo==='semana' && b.tipo!=='semana') return -1;
+    if (b.tipo==='semana' && a.tipo!=='semana') return 1;
+    return b.num - a.num;
+  });
+  return res;
+}
+
+function cotejadorCalc() {
+  const niv   = nivel;
+  const fecha = document.getElementById('cot-fecha').value;
+  const m1130 = parseFloat(document.getElementById('cot-1130').value) || 0;
+  const m1140 = parseFloat(document.getElementById('cot-1140').value) || 0;
+  const m1180 = parseFloat(document.getElementById('cot-1180').value) || 0;
+  const m1190 = parseFloat(document.getElementById('cot-1190').value) || 0;
+
+  if (m1130===0 && m1140===0 && m1180===0 && m1190===0) {
+    alert('Ingresa al menos un monto del recibo para calcular.');
+    return;
+  }
+
+  const dec = cotejadorDecodificar(niv, m1130, m1140, m1180, m1190);
+  const f$ = n => '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const fD = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+
+  // — Header —
+  document.getElementById('cot-res-header').textContent =
+    `Decodificación · Nivel ${niv} · Tasa hora TE: ${f$(dec.tasa_hora)}`;
+
+  // — Grid decodificado —
+  const dg = document.getElementById('cot-decode-grid');
+  const dc = (lbl, val, unit, color) => `
+    <div style="padding:16px 14px;border-right:1px solid var(--cream);border-bottom:1px solid var(--cream);text-align:center;">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);margin-bottom:6px;">${lbl}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:18px;font-weight:500;color:${color||'var(--ink)'};">${val}<span style="font-size:10px;color:var(--muted);margin-left:2px;">${unit}</span></div>
+    </div>`;
+  dg.innerHTML =
+    dc('Horas TE (1130)', dec.horas_1130 > 0 ? dec.horas_1130 : '—', dec.horas_1130 > 0 ? 'hrs' : '', 'var(--blue)') +
+    dc('Comidas (1140)', dec.comidas > 0 ? dec.comidas : '—', dec.comidas > 0 ? 'comidas' : '', 'var(--gold)') +
+    dc('Tolerancia (1180)', dec.min_tol > 0 ? dec.min_tol.toFixed(1) : '—', dec.min_tol > 0 ? 'min' : '', 'var(--ink)') +
+    dc('Hrs penadas · recibo', dec.horas_pen_recibo > 0 ? dec.horas_pen_recibo : '—', '', 'var(--ink)') +
+    dc('Hrs penadas · CCT', dec.horas_pen_cct > 0 ? dec.horas_pen_cct : '—', '', 'var(--gold)') +
+    dc('Total recibo', f$(m1130+m1140+m1180+m1190), '', 'var(--green)') +
+    dc('Tasa pen. · recibo', f$(dec.penHrRec), '/hr', 'var(--ink)') +
+    dc('Tasa pen. · CCT', f$(dec.penHrCCT), '/hr', 'var(--gold)');
+
+  // Nota comidas
+  const tn = document.getElementById('cot-tol-note');
+  if (dec.comidas_exactas > 0 && Math.abs(dec.comidas_exactas - dec.comidas) > 0.01) {
+    tn.innerHTML = `⚠️ El monto 1140 implica <b>${dec.comidas_exactas.toFixed(3)}</b> comidas — no es múltiplo exacto de $${TASA_COMIDA} (se redondea a ${dec.comidas}).`;
+    tn.style.display = 'block';
+  } else { tn.style.display = 'none'; }
+
+  // — Cotejo —
+  const semanas = cotejadorSemanas(fecha);
+  const area = document.getElementById('cot-cotejo-area');
+
+  const rowStyle = 'display:flex;justify-content:space-between;align-items:center;padding:9px 16px;border-bottom:1px solid var(--cream);font-size:12px;';
+  const diffBadge = (v1, v2, tol) => {
+    const d = Math.abs(v1 - v2);
+    const p = v2 > 0 ? d / v2 : (v1 > 0 ? 1 : 0);
+    if (d <= tol) return {cls:'ok', txt:'✓ Coincide', bg:'#e6f5ec', color:'var(--green)'};
+    if (p <= 0.10) return {cls:'warn', txt:`≈ ${f$(d)}`, bg:'#fff8e6', color:'var(--gold)'};
+    return {cls:'err', txt:`▲ ${f$(d)}`, bg:'#fdecea', color:'var(--red)'};
+  };
+
+  if (semanas.length === 0) {
+    area.innerHTML = `<div style="background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:24px;text-align:center;font-size:12px;color:var(--mid);">
+      ⚠️ No hay semanas registradas cercanas a la fecha indicada.<br>
+      <small>Verifica que las semanas estén capturadas en la pestaña Captura.</small>
+    </div>`;
+  } else {
+    let html = '';
+    semanas.slice(0, 5).forEach(({ num, sd, ini, fin, tipo }) => {
+      const ds = cotejadorCalcSemana(sd, niv);
+      const totalRec = m1130+m1140+m1180+m1190;
+      const totalHist = ds.te + ds.ic + ds.tol + ds.penCCT;
+
+      const d1130 = diffBadge(m1130, ds.te, 1);
+      const d1140 = diffBadge(m1140, ds.ic, 0.5);
+      const d1180 = diffBadge(m1180, ds.tol, 1);
+      const d1190c = diffBadge(m1190, ds.penCCT, 1);
+      const d1190r = diffBadge(m1190, ds.penRecibo, 1);
+      const dTot   = diffBadge(totalRec, totalHist, 2);
+
+      const errs = [d1130,d1140,d1180].filter(x=>x.cls==='err').length;
+      const warns= [d1130,d1140,d1180].filter(x=>x.cls==='warn').length;
+      let hBg='#e6f5ec', hColor='var(--green)', hIcon='✅', hTxt='Coincidencia alta';
+      if (errs>=2) { hBg='#fdecea'; hColor='var(--red)'; hIcon='❌'; hTxt='No coincide'; }
+      else if (errs===1||warns>=2) { hBg='#fff8e6'; hColor='var(--gold)'; hIcon='⚠️'; hTxt='Coincidencia parcial'; }
+
+      const pagTag = sd.pagado ? '<span style="font-size:10px;color:var(--green);"> · ✓ Pagada</span>' : '<span style="font-size:10px;color:var(--gold);"> · ⏳ Pendiente</span>';
+      const catTag = sd.catorcena ? `<span style="font-size:10px;color:var(--blue);margin-left:8px;">Cat. ${String(sd.catorcena).padStart(2,'0')}</span>` : '';
+      const tipoTag = tipo==='semana' ? '📅 Fecha dentro del rango' : '📅 Semana cercana';
+
+      const bRow = (lbl, vRec, vHist, badge) => vRec===0 && vHist===0 ? '' : `
+        <div style="${rowStyle}">
+          <span style="color:var(--mid)">${lbl}</span>
+          <div style="display:flex;gap:14px;align-items:center;">
+            <span style="font-family:'DM Mono',monospace;font-weight:500;color:var(--blue);">${f$(vRec)}</span>
+            <span style="font-family:'DM Mono',monospace;font-weight:500;color:var(--green);">${f$(vHist)}</span>
+            <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${badge.bg};color:${badge.color};">${badge.txt}</span>
+          </div>
+        </div>`;
+
+      html += `<div style="border-radius:10px;overflow:hidden;border:1.5px solid var(--rule);margin-bottom:14px;">
+        <div style="padding:11px 16px;background:${hBg};color:${hColor};font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${hBg==='#e6f5ec'?'#b4dfc3':hBg==='#fff8e6'?'#e8d48a':'#f5c6c3'};">
+          <div>${hIcon} Semana ${num} — ${fD(sd.dias[0].fecha)} al ${fD(sd.dias[6].fecha)} ${pagTag}${catTag}</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:12px;background:${hBg};border:1px solid ${hColor};">${hTxt}</span>
+            <span style="font-size:10px;opacity:.7;">${tipoTag}</span>
+          </div>
+        </div>
+        <div style="background:var(--white);">
+          <div style="${rowStyle}background:var(--cream);">
+            <span style="font-size:10px;font-weight:700;">Concepto</span>
+            <div style="display:flex;gap:14px;">
+              <span style="font-size:10px;font-weight:700;color:var(--blue);">Recibo</span>
+              <span style="font-size:10px;font-weight:700;color:var(--green);">Historial</span>
+              <span style="font-size:10px;font-weight:700;color:var(--mid);">Diferencia</span>
+            </div>
+          </div>
+          ${bRow(`1130 T.E. medido (${dec.horas_1130} hrs en recibo vs ${ds.horas} hrs en historial)`, m1130, ds.te, d1130)}
+          ${bRow(`1140 Comidas (${dec.comidas} recibo vs ${ds.comidas} historial)`, m1140, ds.ic, d1140)}
+          ${bRow('1180 TE Tolerancia', m1180, ds.tol, d1180)}
+          ${m1190>0||ds.penCCT>0 ? bRow('1190 T. penado — vs CCT Cláusula 193', m1190, ds.penCCT, d1190c) : ''}
+          ${m1190>0||ds.penRecibo>0 ? `<div style="${rowStyle}background:#fafafa;"><span style="font-size:11px;color:var(--mid);">1190 T. penado — vs fórmula recibo (sal÷8)</span><div style="display:flex;gap:14px;align-items:center;"><span style="font-family:'DM Mono',monospace;font-weight:500;color:var(--blue);">${f$(m1190)}</span><span style="font-family:'DM Mono',monospace;font-weight:500;color:var(--green);">${f$(ds.penRecibo)}</span><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${d1190r.bg};color:${d1190r.color};">${d1190r.txt}</span></div></div>` : ''}
+          <div style="${rowStyle}background:var(--cream);font-weight:700;border-bottom:none;">
+            <span>TOTAL</span>
+            <div style="display:flex;gap:14px;align-items:center;">
+              <span style="font-family:'DM Mono',monospace;font-weight:700;color:var(--blue);">${f$(totalRec)}</span>
+              <span style="font-family:'DM Mono',monospace;font-weight:700;color:var(--green);">${f$(totalHist)}</span>
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${dTot.bg};color:${dTot.color};">${dTot.txt}</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    });
+    area.innerHTML = html;
+  }
+
+  document.getElementById('cot-resultado').style.display = 'block';
+  document.getElementById('cot-resultado').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INIT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
