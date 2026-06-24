@@ -921,7 +921,7 @@ function calcDia(d, horasPrevias) {
   // Empresa (recibo): desde la hora 17 acumulada, tasa = sal÷8  ← abuso vs LFT
   const horasAnteriores = horasPrevias || 0;
   const horasDesde13 = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
-  const horasDesde17 = Math.max(0, (horasAnteriores + h) - 16) - Math.max(0, horasAnteriores - 16);
+  const horasDesde17 = Math.max(0, (horasAnteriores + h) - 17) - Math.max(0, horasAnteriores - 17);
   const penCCT    = Math.round((horasDesde13 * ((salTab / 8) + valorHoraExtra)) * 100) / 100;
   const penRecibo = Math.round((horasDesde17 * (salTab / 8))                    * 100) / 100;
 
@@ -1362,7 +1362,7 @@ function cotejadorCalcSemana(sd, niv) {
     else { if(h>=5) com=2; else if(h>=2) com=1; }
     const icm = Math.round(com * TASA_COMIDA * 100)/100;
     const hd13 = Math.max(0,(horasAcum+h)-12) - Math.max(0,horasAcum-12);
-    const hd17 = Math.max(0,(horasAcum+h)-16) - Math.max(0,horasAcum-16);
+    const hd17 = Math.max(0,(horasAcum+h)-17) - Math.max(0,horasAcum-17);
     tH+=h; tTE+=te; tC+=com; tIC+=icm; tTET+=tet;
     tPcct += Math.round(hd13*((TAB[niv]/8)+vhe)*100)/100;
     tPrec += Math.round(hd17*(TAB[niv]/8)*100)/100;
