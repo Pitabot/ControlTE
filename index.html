@@ -1360,37 +1360,75 @@ function cotejadorCalcSemana(sd, niv) {
   return { horas:tH, te:Math.round(tTE*100)/100, comidas:tC, ic:Math.round(tIC*100)/100, tol:Math.round(tTET*100)/100, penCCT:Math.round(tPcct*100)/100, penRecibo:Math.round(tPrec*100)/100 };
 }
 
-// Busca la semana cuyo rango incluye la fecha dada, o la más cercana
-function cotejadorBuscarSemana(fechaISO) {
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BÚSQUEDA POR PRIORIDAD DE MONTOS
+// 1º 1130 (TE medido) → 2º 1140 (comidas) → 3º 1180 (tolerancia) → 4º 1190 (penado)
+// Desempate final: semana más cercana a la fecha de referencia
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function cotejadorBuscarSemana(m1130, m1140, m1180, m1190, fechaRefISO, niv) {
   const historial = JSON.parse(localStorage.getItem('cte_v4') || '{}');
-  const fd = new Date(fechaISO + 'T12:00');
-  let mejor = null, mejorDiff = Infinity;
+  const TOL_PESO = 1.0;   // tolerancia en $ para considerar coincidencia en un concepto
 
+  // Calcular resultados de todas las semanas con datos
+  const candidatos = [];
   Object.keys(historial).forEach(k => {
     const sd = historial[k];
     if (!sd.dias || sd.dias.length === 0) return;
     const tH = sd.dias.reduce((s,d) => s+(d.horas||0), 0);
     if (tH === 0 && !sd.pagado) return;
-
+    const ds = cotejadorCalcSemana(sd, niv);
     const ini = new Date(sd.dias[0].fecha + 'T12:00');
     const fin = new Date(sd.dias[6].fecha + 'T12:00');
-
-    // Si la fecha cae dentro de la semana
-    if (fd >= ini && fd <= fin) {
-      mejor = { key:k, num:parseInt(k.slice(1)), sd, ini, fin, tipo:'exacta' };
-      mejorDiff = 0;
-      return;
-    }
-    // Distancia al centro de la semana
-    const centro = new Date((ini.getTime() + fin.getTime()) / 2);
-    const diff = Math.abs(fd - centro);
-    if (diff < mejorDiff) {
-      mejorDiff = diff;
-      mejor = { key:k, num:parseInt(k.slice(1)), sd, ini, fin, tipo:'cercana' };
-    }
+    candidatos.push({ key:k, num:parseInt(k.slice(1)), sd, ds, ini, fin });
   });
 
-  return mejor;
+  if (candidatos.length === 0) return null;
+
+  // Función auxiliar: ¿el monto del recibo coincide con el historial dentro de tolerancia?
+  const coincide = (mRec, mHist) => Math.abs(mRec - mHist) <= TOL_PESO;
+
+  // Filtrado progresivo: si al filtrar quedan 0, se queda la lista anterior
+  const filtrar = (lista, mRec, campo) => {
+    if (mRec === 0) return lista; // si no hay monto en el recibo, no filtrar
+    const filtrada = lista.filter(c => coincide(mRec, c.ds[campo]));
+    return filtrada.length > 0 ? filtrada : lista;
+  };
+
+  let lista = candidatos;
+  let pasosDesc = [];
+
+  // Paso 1: filtrar por 1130 (TE medido)
+  const tras1130 = filtrar(lista, m1130, 'te');
+  pasosDesc.push({ concepto:'1130 T.E.', antes: lista.length, despues: tras1130.length });
+  lista = tras1130;
+
+  // Paso 2: filtrar por 1140 (comidas)
+  const tras1140 = filtrar(lista, m1140, 'ic');
+  pasosDesc.push({ concepto:'1140 Comidas', antes: lista.length, despues: tras1140.length });
+  lista = tras1140;
+
+  // Paso 3: filtrar por 1180 (tolerancia)
+  const tras1180 = filtrar(lista, m1180, 'tol');
+  pasosDesc.push({ concepto:'1180 Tolerancia', antes: lista.length, despues: tras1180.length });
+  lista = tras1180;
+
+  // Paso 4: filtrar por 1190 (penado)
+  const tras1190 = filtrar(lista, m1190, 'penCCT');
+  pasosDesc.push({ concepto:'1190 Penado', antes: lista.length, despues: tras1190.length });
+  lista = tras1190;
+
+  // Desempate final: semana más cercana a la fecha de referencia
+  const fd = fechaRefISO ? new Date(fechaRefISO + 'T12:00') : null;
+  let ganadora = lista[0];
+  if (fd && lista.length > 1) {
+    lista.forEach(c => {
+      const centro = new Date((c.ini.getTime() + c.fin.getTime()) / 2);
+      const cg = new Date((ganadora.ini.getTime() + ganadora.fin.getTime()) / 2);
+      if (Math.abs(fd - centro) < Math.abs(fd - cg)) ganadora = c;
+    });
+  }
+
+  return { ...ganadora, pasos: pasosDesc, totalCandidatos: candidatos.length, finalCandidatos: lista.length };
 }
 
 function cotejadorCalc() {
@@ -1422,7 +1460,7 @@ function cotejadorCalc() {
   refs.forEach((ref, idx) => {
     const dec = cotejadorDecodificar(niv, ref.m1130, ref.m1140, ref.m1180, ref.m1190);
     const totalRec = ref.m1130 + ref.m1140 + ref.m1180 + ref.m1190;
-    const sem = cotejadorBuscarSemana(ref.fecha);
+    const sem = cotejadorBuscarSemana(ref.m1130, ref.m1140, ref.m1180, ref.m1190, ref.fecha, niv);
 
     // ── Encabezado de referencia ──
     html += `<div style="margin-bottom:20px;">
@@ -1453,7 +1491,7 @@ function cotejadorCalc() {
         ⚠️ No hay semanas registradas cercanas a ${fD(ref.fecha)}. Captura esa semana primero.
       </div>`;
     } else {
-      const ds = cotejadorCalcSemana(sem.sd, niv);
+      const ds = sem.ds; // ya calculado dentro del buscador
       const totalHist = ds.te + ds.ic + ds.tol + ds.penCCT;
 
       const diffBadge = (v1, v2, tol) => {
@@ -1473,16 +1511,43 @@ function cotejadorCalc() {
       const errs = [d1130,d1140,d1180].filter(x=>x.color==='var(--red)').length;
       const warns= [d1130,d1140,d1180].filter(x=>x.color==='var(--gold)').length;
       let mBg='#e6f5ec', mColor='var(--green)', mIcon='✅', mTxt='Coincide';
-      if (errs>=2)        { mBg='#fdecea'; mColor='var(--red)';  mIcon='❌'; mTxt='No coincide'; }
+      if (errs>=2)             { mBg='#fdecea'; mColor='var(--red)';  mIcon='❌'; mTxt='No coincide'; }
       else if (errs||warns>=2) { mBg='#fff8e6'; mColor='var(--gold)'; mIcon='⚠️'; mTxt='Parcial'; }
 
-      const tipoTag = sem.tipo==='exacta'
-        ? '<span style="font-size:9px;background:#e6f5ec;color:var(--green);padding:2px 7px;border-radius:8px;font-weight:700;">📅 Fecha exacta</span>'
-        : `<span style="font-size:9px;background:#fff8e6;color:var(--gold);padding:2px 7px;border-radius:8px;font-weight:700;">📅 Semana más cercana</span>`;
+      // Panel de pasos del filtrado
+      const pasosCols = sem.pasos.map(p => {
+        const redujo = p.despues < p.antes;
+        const igual  = p.despues === p.antes;
+        const bg     = redujo ? '#e8f0ff' : '#fafaf8';
+        const color  = redujo ? 'var(--blue)' : 'var(--muted)';
+        return `<div style="text-align:center;padding:8px 6px;border-right:1px solid var(--cream);background:${bg};">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:${color};margin-bottom:3px;">${p.concepto}</div>
+          <div style="font-size:11px;font-weight:700;color:${color};">${p.antes} → ${p.despues}</div>
+          <div style="font-size:9px;color:var(--muted);">${igual ? 'sin cambio' : `−${p.antes - p.despues}`}</div>
+        </div>`;
+      }).join('');
+
+      const desempateTag = sem.finalCandidatos > 1
+        ? `<span style="font-size:9px;background:#fff8e6;color:var(--gold);padding:2px 7px;border-radius:8px;font-weight:700;">🎯 Desempate por fecha ref.</span>`
+        : `<span style="font-size:9px;background:#e6f5ec;color:var(--green);padding:2px 7px;border-radius:8px;font-weight:700;">🎯 Única coincidencia</span>`;
 
       const pagTag = sem.sd.pagado
         ? '<span style="font-size:9px;color:var(--green);"> ✓ Pagada</span>'
         : '<span style="font-size:9px;color:var(--gold);"> ⏳ Pendiente</span>';
+
+      // Proceso de filtrado visible
+      html += `<div style="background:var(--cream);padding:8px 14px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">
+        Proceso de búsqueda — ${sem.totalCandidatos} semanas en historial
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:2px solid var(--rule);">
+        ${pasosCols}
+      </div>
+      <div style="padding:8px 14px;font-size:11px;color:var(--mid);border-bottom:1px solid var(--cream);background:#fafaf8;">
+        ${sem.finalCandidatos > 1
+          ? `⚖️ Quedaron <b>${sem.finalCandidatos}</b> semanas con montos similares — la fecha de referencia <b>${fD(ref.fecha)}</b> seleccionó la más cercana.`
+          : `✅ Se encontró <b>1</b> semana con montos coincidentes.`
+        }
+      </div>`;
 
       const bRow = (lbl, vR, vH, badge) => (vR===0 && vH===0) ? '' :
         `<div style="${rowS}"><span style="color:var(--mid)">${lbl}</span>
@@ -1494,7 +1559,7 @@ function cotejadorCalc() {
 
       html += `<div style="background:${mBg};padding:9px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${mBg==='#e6f5ec'?'#b4dfc3':mBg==='#fff8e6'?'#e8d48a':'#f5c6c3'};">
         <div style="font-size:12px;font-weight:700;color:${mColor};">${mIcon} Sem. ${sem.num} · ${fD(sem.sd.dias[0].fecha)} – ${fD(sem.sd.dias[6].fecha)} ${pagTag}</div>
-        <div style="display:flex;gap:6px;align-items:center;">${tipoTag}<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;background:${mBg};border:1px solid ${mColor};color:${mColor};">${mTxt}</span></div>
+        <div style="display:flex;gap:6px;align-items:center;">${desempateTag}<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;background:${mBg};border:1px solid ${mColor};color:${mColor};">${mTxt}</span></div>
       </div>
       <div style="${rowS}background:var(--cream);border-bottom:1px solid var(--rule);">
         <span style="font-size:9px;font-weight:700;color:var(--mid);">Concepto</span>
