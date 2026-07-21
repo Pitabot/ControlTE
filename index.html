@@ -410,7 +410,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
     <div style="display:flex;gap:12px;align-items:center;background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:140px;">
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Trabajador</span>
-        <input id="inp-nombre2" style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);" value="ERICK" oninput="document.getElementById('inp-nombre').value=this.value;guardar()">
+        <input id="inp-nombre2" style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);" value="" placeholder="Nombre del trabajador" oninput="document.getElementById('inp-nombre').value=this.value;guardar()">
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex:2;min-width:200px;">
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);white-space:nowrap;">Nivel</span>
@@ -628,12 +628,25 @@ function semData(s) {
     const ini = semInicio(s);
     datos[k] = {
       pagado: false,
+      // SNAPSHOT: nivel, salario tabulado y ARC vigentes AL MOMENTO de capturar
+      // esta semana. Esto evita que un incremento salarial futuro recalcule
+      // (y por tanto altere) el monto que correspondía a semanas ya pasadas.
+      nivelSnap: nivel,
+      salSnap:   TAB[nivel],
+      arcSnap:   ARC[nivel],
       dias: Array.from({length:7}, (_,i) => {
         const d = new Date(ini); d.setDate(d.getDate()+i);
         const iso = d.toISOString().slice(0,10);
         return { fecha:iso, horas:0, tipo: FEST.has(iso)?'festivo': i>=5?'descanso':'normal' };
       })
     };
+  } else if (datos[k].salSnap === undefined) {
+    // Migración de semanas capturadas ANTES de este arreglo: no tenemos el
+    // salario real de ese momento, así que usamos el actual como mejor
+    // aproximación disponible y lo dejamos fijo desde ahora en adelante.
+    datos[k].nivelSnap = datos[k].nivelSnap ?? nivel;
+    datos[k].salSnap   = TAB[datos[k].nivelSnap];
+    datos[k].arcSnap   = ARC[datos[k].nivelSnap];
   }
   return datos[k];
 }
@@ -929,14 +942,16 @@ function getComidas(horas, tipo) {
   }
 }
 
-function calcDia(d, horasPrevias) {
+function calcDia(d, horasPrevias, salSnap, arcSnap) {
   const h = d.horas || 0;
   const t = d.tipo || 'normal';
   const fechaObj = new Date(d.fecha + 'T12:00');
   const esDomingo = fechaObj.getDay() === 0;
 
-  const salTab = TAB[nivel];
-  const arc    = ARC[nivel]; // Ayuda Renta Casa por nivel (Anexo 1)
+  // Usa el salario/ARC vigente AL MOMENTO de esa semana (snapshot) si viene
+  // dado; si no (llamadas antiguas), cae al nivel actual como antes.
+  const salTab = salSnap !== undefined ? salSnap : TAB[nivel];
+  const arc    = arcSnap !== undefined ? arcSnap : ARC[nivel]; // Ayuda Renta Casa por nivel (Anexo 1)
 
   // --- 1130: TIEMPO EXTRA OCASIONAL (Cláusula 193) ---
   const baseCalculo    = salTab + (salTab * 0.60) + arc;
@@ -1066,7 +1081,7 @@ function render() {
   let horasAcum = 0;
 
   sd.dias.forEach((d, i) => {
-    const c = calcDia(d, horasAcum);
+    const c = calcDia(d, horasAcum, sd.salSnap, sd.arcSnap);
     horasAcum += c.h;
     const tag = c.t !== 'normal' ? `<span class="tag-${c.t[0]}">[${c.t}]</span>` : '';
     const hhmm = fTol(c.tm);
@@ -1131,7 +1146,7 @@ function renderHist() {
   }
   sems.forEach(s => {
     const sd = datos['s'+s]; let tH=0, tS=0;
-    sd.dias.forEach(d => { const c=calcDia(d,0); tH+=c.h; tS+=c.sub; });
+    sd.dias.forEach(d => { const c=calcDia(d,0,sd.salSnap,sd.arcSnap); tH+=c.h; tS+=c.sub; });
     if (tH === 0 && !sd.pagado) return;
 
     // Opciones de catorcena 1-26
