@@ -658,7 +658,29 @@ const JBIN_ID  = '6a30b258da38895dfec72c1e';
 const JBIN_KEY = '$2a$10$mKCTBP96l4oINrx2Z3uXbOTEGW/08f1Gd2g.ndODEp1eLEqu7p83W';
 const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
 
+
+// Congela en cada día de la semana los montos YA CALCULADOS (1130/1140/1180/1190,
+// tolerancia, prima dominical, subtotal) usando el salario/ARC vigentes de esa
+// semana (sd.salSnap/arcSnap). Esto queda guardado como dato fijo — un
+// incremento salarial futuro, o incluso una corrección a la fórmula de cálculo,
+// YA NO altera lo que se ve para semanas pasadas: quedó "impreso" igual que un
+// recibo real.
+function congelarMontos(s) {
+  const sd = semData(s);
+  let horasAcum = 0;
+  sd.dias.forEach(d => {
+    const c = calcDia(d, horasAcum, sd.salSnap, sd.arcSnap);
+    horasAcum += c.h;
+    d.montoSnap = {
+      te: c.te, com: c.com, icm: c.icm, tm: c.tm, tet: c.tet,
+      penCCT: c.penCCT, penRecibo: c.penRecibo, primaDom: c.primaDom, sub: c.sub
+    };
+  });
+  sd.congelado = Date.now();
+}
+
 function guardar() {
+  congelarMontos(semana);
   localStorage.setItem('cte_v4',      JSON.stringify(datos));
   localStorage.setItem('cte_nivel',   nivel);
   localStorage.setItem('cte_semana',  semana);
@@ -677,19 +699,25 @@ const SYNC_BIN_URL = `https://api.jsonbin.io/v3/b/${SYNC_BIN_ID}`;
 let syncTimer = null;
 function syncCloudDebounced() {
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(syncToCloud, 2000); // espera 2s de inactividad antes de subir
+  syncTimer = setTimeout(syncToCloud, 60000); // espera 1 min de inactividad antes de subir a la nube
 }
 
+// Si el usuario minimiza/cierra la app antes de que pasen los 60s del
+// debounce normal, forzamos un sync inmediato para no perder ese último
+// tramo de cambios (el navegador puede matar el setTimeout pendiente).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && syncTimer) {
+    clearTimeout(syncTimer);
+    syncToCloud();
+  }
+});
+window.addEventListener('pagehide', () => {
+  if (syncTimer) { clearTimeout(syncTimer); syncToCloud(); }
+});
+
 function getUserKey() {
-  // ID de usuario ESTABLE — se genera una sola vez por dispositivo/navegador
-  // y NUNCA cambia, sin importar si la licencia expira o se activa un código nuevo.
-  // Esto evita que el historial quede "huérfano" bajo un userKey viejo cada vez
-  // que caduca o se reactiva una licencia (bug corregido el 2026-07-20).
   let uid = localStorage.getItem('cte_uid');
   if (!uid) {
-    // Migración transparente: si el usuario ya tenía un anon_id o una licencia
-    // activa de la versión anterior, lo reusamos como base del uid para no
-    // romper la continuidad de quienes ya estaban sincronizando bajo esa llave.
     const legacyAnon = localStorage.getItem('cte_anon_id');
     const legacyLic  = JSON.parse(localStorage.getItem('cte_lic') || 'null');
     uid = legacyAnon || (legacyLic && legacyLic.code) ||
@@ -697,6 +725,18 @@ function getUserKey() {
     localStorage.setItem('cte_uid', uid);
   }
   return uid;
+}
+
+// Igual que getUserKey(), pero sin crear un uid nuevo si no existe todavía.
+// Sirve para saber si YA tenemos una identidad conocida (licencia/anon previos)
+// antes de intentar restaurar — evita "quemar" un uid aleatorio de forma
+// prematura, justo antes de que el usuario tenga oportunidad de introducir
+// su código de licencia real tras borrar caché.
+function tieneIdentidadConocida() {
+  if (localStorage.getItem('cte_uid')) return true;
+  if (localStorage.getItem('cte_anon_id')) return true;
+  const lic = JSON.parse(localStorage.getItem('cte_lic') || 'null');
+  return !!(lic && lic.code);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -848,7 +888,13 @@ async function validarCodigo() {
       });
 
       msg.className = "unlock-msg ok";
-      msg.innerText = "¡Activado con éxito!";
+      msg.innerText = "¡Activado! Buscando tu historial en la nube...";
+
+      // Con el código recién activado, getUserKey() ya tiene identidad real
+      // (el código). Restauramos aquí mismo, ANTES de recargar, para que si
+      // había historial guardado bajo este código, aparezca de inmediato.
+      await restaurarDesdeNube();
+
       setTimeout(() => location.reload(), 1500);
 
     } else {
@@ -863,14 +909,19 @@ async function validarCodigo() {
 async function initApp() {
   const splash = document.getElementById('splash');
 
-  // Si no hay datos locales (caché borrado), intenta restaurar desde la nube
+  // Si no hay datos locales (caché borrado) Y ya sabemos qué identidad usar
+  // (había una licencia o anon_id previos), intenta restaurar desde la nube.
+  // Si NO hay ninguna identidad conocida todavía (caché recién borrado, sin
+  // haber introducido código), NO restauramos aquí — esperamos a que el
+  // usuario introduzca su código en el paywall; ahí sí se restaura (ver
+  // validarCodigo), usando esa identidad real en vez de una inventada.
   const sinDatosLocales = Object.keys(datos).length === 0;
-  if (sinDatosLocales) {
+  if (sinDatosLocales && tieneIdentidadConocida()) {
     const restaurado = await restaurarDesdeNube();
     if (restaurado) {
       cambiarSemana(0);
     }
-  } else {
+  } else if (!sinDatosLocales) {
     // Si ya hay datos, sube un respaldo silencioso al cargar
     syncCloudDebounced();
   }
@@ -1146,7 +1197,10 @@ function renderHist() {
   }
   sems.forEach(s => {
     const sd = datos['s'+s]; let tH=0, tS=0;
-    sd.dias.forEach(d => { const c=calcDia(d,0,sd.salSnap,sd.arcSnap); tH+=c.h; tS+=c.sub; });
+    sd.dias.forEach(d => {
+      if (d.montoSnap) { tH += d.horas||0; tS += d.montoSnap.sub; }
+      else { const c=calcDia(d,0,sd.salSnap,sd.arcSnap); tH+=c.h; tS+=c.sub; }
+    });
     if (tH === 0 && !sd.pagado) return;
 
     // Opciones de catorcena 1-26
