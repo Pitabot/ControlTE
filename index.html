@@ -303,8 +303,6 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   text-decoration: none;
 }
 .wa-float:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 10px 32px rgba(37,211,102,.55); }
-
-@media (max-width: 700px) {
   .days-grid { grid-template-columns: repeat(4,1fr); }
   .scards { grid-template-columns: repeat(3,1fr); }
   .ref-grid { grid-template-columns: 1fr; }
@@ -382,7 +380,6 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 <div class="tabs-bar">
   <div class="tab-btn active" onclick="showTab('captura')">📋 Captura</div>
   <div class="tab-btn" onclick="showTab('historial')">📊 Historial</div>
-  <div class="tab-btn" onclick="showTab('cotejador')">🔍 Cotejador</div>
   <div class="tab-btn" onclick="showTab('referencia')">📖 Referencia</div>
   <div class="tab-btn" onclick="showTab('soporte')">💬 Soporte</div>
 </div>
@@ -457,8 +454,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
           <th>1130 T.E. medido</th><th>1140 # Comidas</th><th>Importe comidas</th>
           <th>1180 TE tolerancia</th>
           <th style="color:#f5c842">1190 T.penado CCT</th>
-          <th style="color:#f5c842">1190 T.penado Recibo</th>
-          <th>Subtotal CCT</th><th>Subtotal Recibo</th>
+          <th>Subtotal</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -469,34 +465,6 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   <div id="tab-historial" class="tab-pane">
     <div class="sec-lbl">Semanas registradas</div>
     <div id="hlist"></div>
-  </div>
-
-  <!-- ═══ COTEJADOR ═══ -->
-  <div id="tab-cotejador" class="tab-pane">
-
-    <div style="background:#e8f0ff;border:1.5px solid #c5d8f5;border-left:3px solid var(--blue2);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--blue);line-height:1.7;margin-bottom:16px;">
-      <strong>¿Cómo funciona?</strong> Cada línea del recibo tiene una <b>referencia</b> (fecha del período que están pagando, ej. 20260504).
-      Ingresa esa fecha y los montos de ese renglón. Puedes agregar varias referencias del mismo recibo.
-      El cotejador buscará la semana del historial que corresponde a esa fecha de referencia.
-    </div>
-
-    <div style="background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow);">
-      <div>
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Nivel activo en la app</div>
-        <div id="cot-nivel-display" style="font-family:'DM Mono',monospace;font-size:16px;font-weight:500;color:var(--blue);margin-top:2px;">—</div>
-      </div>
-      <button onclick="cotejadorAgregarRef()" style="background:var(--blue);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;">
-        + Agregar referencia
-      </button>
-    </div>
-
-    <div id="cot-refs-container"></div>
-
-    <button onclick="cotejadorCalc()" id="cot-btn-calc" style="display:none;width:100%;padding:14px;background:var(--blue);color:#fff;border:none;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'DM Sans',sans-serif;margin-bottom:20px;">
-      🔍 Decodificar y cotejar todo
-    </button>
-
-    <div id="cot-resultado"></div>
   </div>
 
   <!-- ═══ REFERENCIA ═══ -->
@@ -700,16 +668,67 @@ function syncCloudDebounced() {
 }
 
 function getUserKey() {
-  // Usa el código de licencia activo como identificador único del usuario.
-  // Si no hay licencia (modo prueba), usa un ID local generado una sola vez.
-  const lic = JSON.parse(localStorage.getItem('cte_lic') || 'null');
-  if (lic && lic.code) return lic.code;
-  let anon = localStorage.getItem('cte_anon_id');
-  if (!anon) {
-    anon = 'ANON-' + Math.random().toString(36).slice(2, 10).toUpperCase();
-    localStorage.setItem('cte_anon_id', anon);
+  // ID de usuario ESTABLE — se genera una sola vez por dispositivo/navegador
+  // y NUNCA cambia, sin importar si la licencia expira o se activa un código nuevo.
+  // Esto evita que el historial quede "huérfano" bajo un userKey viejo cada vez
+  // que caduca o se reactiva una licencia (bug corregido el 2026-07-20).
+  let uid = localStorage.getItem('cte_uid');
+  if (!uid) {
+    // Migración transparente: si el usuario ya tenía un anon_id o una licencia
+    // activa de la versión anterior, lo reusamos como base del uid para no
+    // romper la continuidad de quienes ya estaban sincronizando bajo esa llave.
+    const legacyAnon = localStorage.getItem('cte_anon_id');
+    const legacyLic  = JSON.parse(localStorage.getItem('cte_lic') || 'null');
+    uid = legacyAnon || (legacyLic && legacyLic.code) ||
+          ('U-' + Math.random().toString(36).slice(2, 10).toUpperCase() + Date.now().toString(36).toUpperCase());
+    localStorage.setItem('cte_uid', uid);
   }
-  return anon;
+  return uid;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FUSIÓN MANUAL DE HISTORIALES FRAGMENTADOS
+// Úsalo en consola si un usuario tiene datos repartidos en varios userKeys
+// antiguos (por haber activado más de un código antes de este arreglo).
+// Ejemplo: fusionarHistoriales(['Y-ADLU805','ANON-V6YWXOUE'])
+// Fusiona esas llaves viejas DENTRO del cte_uid actual, sin pisar semanas
+// que ya existan (conserva la versión con más horas totales si hay choque).
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function fusionarHistoriales(userKeysViejos) {
+  const destino = getUserKey();
+  const res = await fetch(SYNC_BIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
+  const data = await res.json();
+  const registro = (data.record && data.record.usuarios) ? data.record.usuarios : {};
+
+  if (!registro[destino]) registro[destino] = { datos: {}, nivel, semana, jornada, actualizado: Date.now() };
+  const datosDestino = registro[destino].datos;
+
+  let semanasFusionadas = 0;
+  for (const uk of userKeysViejos) {
+    const origen = registro[uk];
+    if (!origen || !origen.datos) continue;
+    for (const [semKey, semData] of Object.entries(origen.datos)) {
+      const totalOrigen = (semData.dias || []).reduce((s, d) => s + (d.horas || 0), 0);
+      const existente = datosDestino[semKey];
+      const totalExistente = existente ? (existente.dias || []).reduce((s, d) => s + (d.horas || 0), 0) : -1;
+      if (!existente || totalOrigen > totalExistente) {
+        datosDestino[semKey] = semData;
+        semanasFusionadas++;
+      }
+    }
+  }
+
+  registro[destino].datos = datosDestino;
+  registro[destino].actualizado = Date.now();
+
+  await fetch(SYNC_BIN_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY },
+    body: JSON.stringify({ usuarios: registro })
+  });
+
+  console.log(`Fusión completa: ${semanasFusionadas} semanas fusionadas en ${destino}`);
+  return { destino, semanasFusionadas };
 }
 
 async function syncToCloud() {
@@ -861,6 +880,18 @@ function actualizarUIEstado() {
   }
 }
 
+function contactarWA() {
+  const nombre = document.getElementById('inp-nombre').value;
+  window.open(`https://wa.me/${WA_NUM}?text=Hola, soy ${nombre}. Quiero activar ControlTE.`, '_blank');
+}
+
+function showTab(id) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  if(event) event.currentTarget.classList.add('active');
+}
+
 window.onload = () => { /* El splash se maneja con el botón */ };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -916,14 +947,11 @@ function calcDia(d, horasPrevias) {
   const minTol = getTolMin(h, t);
   const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
 
-  // --- 1190: TIEMPO PENADO ---
-  // CCT Cláusula 193: desde la hora 13 acumulada, tasa = (sal÷8) + hora_TE
-  // Empresa (recibo): desde la hora 17 acumulada, tasa = sal÷8  ← abuso vs LFT
+  // --- 1190: TIEMPO PENADO (desde la hora 13 acumulada en la semana) ---
   const horasAnteriores = horasPrevias || 0;
-  const horasDesde13 = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
-  const horasDesde17 = Math.max(0, (horasAnteriores + h) - 17) - Math.max(0, horasAnteriores - 17);
+  const horasDesde13    = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
   const penCCT    = Math.round((horasDesde13 * ((salTab / 8) + valorHoraExtra)) * 100) / 100;
-  const penRecibo = Math.round((horasDesde17 * (salTab / 8))                    * 100) / 100;
+  const penRecibo = Math.round((horasDesde13 * (salTab / 8))                    * 100) / 100;
 
   // --- PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
@@ -936,10 +964,9 @@ function calcDia(d, horasPrevias) {
   const com = getComidas(h, t);
   const icm = Math.round((com * 187.75) * 100) / 100;
 
-  const subTotal       = Math.round((te + icm + tet + penCCT    + primaDom) * 100) / 100;
-  const subTotalRecibo = Math.round((te + icm + tet + penRecibo + primaDom) * 100) / 100;
+  const subTotal = Math.round((te + icm + tet + penCCT + primaDom) * 100) / 100;
 
-  return { h, t, te, com, icm, tm: minTol, tet, penCCT, penRecibo, primaDom, sub: h > 0 ? subTotal : 0, subRec: h > 0 ? subTotalRecibo : 0 };
+  return { h, t, te, com, icm, tm: minTol, tet, penCCT, penRecibo, primaDom, sub: h > 0 ? subTotal : 0 };
 }
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FORMATO
@@ -1035,7 +1062,7 @@ function render() {
   // TABLA
   const tb = document.getElementById('tbody');
   tb.innerHTML = '';
-  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tPcct=0,tPrec=0,tS=0,tSrec=0;
+  let tH=0,tTE=0,tC=0,tIC=0,tTM=0,tTET=0,tPcct=0,tS=0;
   let horasAcum = 0;
 
   sd.dias.forEach((d, i) => {
@@ -1054,12 +1081,10 @@ function render() {
       <td>${f$(c.icm)}</td>
       <td>${f$(c.tet)}</td>
       <td style="color:var(--gold)">${f$(c.penCCT)}</td>
-      <td style="color:var(--gold)">${f$(c.penRecibo)}</td>
-      <td>${c.h > 0 ? f$(c.sub)    : '<span class="z">—</span>'}</td>
-      <td>${c.h > 0 ? f$(c.subRec) : '<span class="z">—</span>'}</td>`;
+      <td>${c.h > 0 ? f$(c.sub) : '<span class="z">—</span>'}</td>`;
     tb.appendChild(tr);
     tH+=c.h; tTE+=c.te; tC+=c.com; tIC+=c.icm; tTM+=c.tm; tTET+=c.tet;
-    tPcct+=c.penCCT; tPrec+=c.penRecibo; tS+=c.sub; tSrec+=c.subRec;
+    tPcct+=c.penCCT; tS+=c.sub;
   });
 
   const totHHMM = fTol(tTM);
@@ -1070,14 +1095,11 @@ function render() {
     <td>${f$(tTE)}</td><td>${tC||'<span class="z">—</span>'}</td>
     <td>${f$(tIC)}</td><td>${f$(tTET)}</td>
     <td style="color:var(--gold)">${f$(tPcct)}</td>
-    <td style="color:var(--gold)">${f$(tPrec)}</td>
-    <td>${f$(tS)}</td><td>${f$(tSrec)}</td>`;
+    <td>${f$(tS)}</td>`;
   tb.appendChild(trT);
 
   const trG = document.createElement('tr'); trG.className = 'grow';
-  trG.innerHTML = `<td colspan="9" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR</td>
-    <td title="Conforme CCT Cláusula 193 — desde hr 13">${f$(tS)}</td>
-    <td title="Como paga la empresa — desde hr 17">${f$(tSrec)}</td>`;
+  trG.innerHTML = `<td colspan="8" style="text-align:left;color:rgba(255,255,255,.7)">IMPORTE TOTAL A COBRAR &nbsp;(1130 + 1140 + 1180 + 1190 CCT)</td><td>${f$(tS)}</td>`;
   tb.appendChild(trG);
 
   // CARDS
@@ -1086,8 +1108,8 @@ function render() {
     <div class="scard"><div class="scard-lbl">Tolerancia total</div><div class="scard-val" style="font-size:16px">${totHHMM||'—'}<span class="scard-unit">h:mm</span></div></div>
     <div class="scard" style="border-color:var(--gold);background:#fffbf0"><div class="scard-lbl" style="color:var(--gold)">🍽 Comidas semana</div><div class="scard-val" style="color:var(--gold)">${tC}<span class="scard-unit">comidas</span></div><div style="font-size:10px;color:var(--red);font-weight:700;margin-top:4px">$${tIC.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard"><div class="scard-lbl">T.E. medido 1130</div><div class="scard-val" style="font-size:15px">$${tTE.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
-    <div class="scard" style="border-color:var(--red)"><div class="scard-lbl" style="color:var(--red)">1190 T.penado recibo</div><div class="scard-val" style="font-size:15px;color:var(--red)">$${tPrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:var(--gold);font-weight:700;margin-top:4px">CCT: $${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
-    <div class="scard hl"><div class="scard-lbl">Total a cobrar (recibo)</div><div class="scard-val">$${tSrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:rgba(255,255,255,.5);margin-top:4px">CCT: $${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
+    <div class="scard" style="border-color:var(--gold)"><div class="scard-lbl" style="color:var(--gold)">1190 T.penado CCT</div><div class="scard-val" style="font-size:15px;color:var(--gold)">$${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
+    <div class="scard hl"><div class="scard-lbl">Total a cobrar (CCT)</div><div class="scard-val">$${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
 
   guardar();
   renderHist();
@@ -1243,10 +1265,9 @@ function showTab(id) {
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
-  ['captura','historial','cotejador','referencia','soporte'].forEach((n,i) => {
+  ['captura','historial','referencia','soporte'].forEach((n,i) => {
     if (n === id) document.querySelectorAll('.tab-btn')[i].classList.add('active');
   });
-  if (id === 'cotejador') cotejadorInit();
 }
 function selPlan(p) {
   planSel = p;
@@ -1261,346 +1282,6 @@ function contactarWA() {
   );
   window.open(`https://wa.me/${WA_NUM}?text=${msg}`, '_blank');
 }
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// COTEJADOR DE RECIBO — por referencia
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-let cotRefs = []; // [{id, fecha, m1130, m1140, m1180, m1190}]
-let cotRefCount = 0;
-
-const INP_STYLE = "width:100%;background:var(--paper);border:1.5px solid var(--rule);border-radius:7px;padding:8px 10px;font-size:13px;font-family:'DM Mono',monospace;color:var(--ink);outline:none;box-sizing:border-box;";
-const LBL_STYLE = "font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);display:block;margin-bottom:4px;";
-
-function cotejadorInit() {
-  document.getElementById('cot-nivel-display').textContent = `Nivel ${nivel} — $${TAB[nivel].toFixed(2)}/día`;
-  if (cotRefs.length === 0) cotejadorAgregarRef();
-}
-
-function cotejadorAgregarRef() {
-  cotRefCount++;
-  const id = cotRefCount;
-  cotRefs.push({ id });
-
-  const wrap = document.getElementById('cot-refs-container');
-  const div = document.createElement('div');
-  div.id = `cot-ref-${id}`;
-  div.style.cssText = 'background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow);';
-  div.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <div style="font-size:11px;font-weight:700;color:var(--blue);">📄 Referencia #${id}</div>
-      ${id > 1 ? `<button onclick="cotejadorEliminarRef(${id})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:0;">×</button>` : ''}
-    </div>
-    <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1fr;gap:10px;align-items:end;">
-      <div>
-        <label style="${LBL_STYLE}">Fecha referencia del recibo</label>
-        <input type="date" id="cot-ref-fecha-${id}" style="${INP_STYLE}" oninput="cotejadorActualizarBoton()">
-        <span style="font-size:9px;color:var(--muted);">Ej: 20260504 → 2026-05-04</span>
-      </div>
-      <div>
-        <label style="${LBL_STYLE}">1130 T.E. medido ($)</label>
-        <input type="number" id="cot-ref-1130-${id}" placeholder="0.00" min="0" step="0.01" style="${INP_STYLE}" oninput="cotejadorActualizarBoton()">
-      </div>
-      <div>
-        <label style="${LBL_STYLE}">1140 Comidas ($)</label>
-        <input type="number" id="cot-ref-1140-${id}" placeholder="0.00" min="0" step="0.01" style="${INP_STYLE}" oninput="cotejadorActualizarBoton()">
-      </div>
-      <div>
-        <label style="${LBL_STYLE}">1180 TE Tolerancia ($)</label>
-        <input type="number" id="cot-ref-1180-${id}" placeholder="0.00" min="0" step="0.01" style="${INP_STYLE}" oninput="cotejadorActualizarBoton()">
-      </div>
-      <div>
-        <label style="${LBL_STYLE}">1190 T. penado ($)</label>
-        <input type="number" id="cot-ref-1190-${id}" placeholder="0.00" min="0" step="0.01" style="${INP_STYLE}" oninput="cotejadorActualizarBoton()">
-      </div>
-    </div>`;
-  wrap.appendChild(div);
-  cotejadorActualizarBoton();
-}
-
-function cotejadorEliminarRef(id) {
-  cotRefs = cotRefs.filter(r => r.id !== id);
-  const el = document.getElementById(`cot-ref-${id}`);
-  if (el) el.remove();
-  cotejadorActualizarBoton();
-}
-
-function cotejadorActualizarBoton() {
-  const btn = document.getElementById('cot-btn-calc');
-  // Mostrar botón si al menos una referencia tiene fecha y algún monto
-  let hay = false;
-  document.querySelectorAll('[id^="cot-ref-fecha-"]').forEach(inp => {
-    if (inp.value) hay = true;
-  });
-  btn.style.display = hay ? 'block' : 'none';
-}
-
-function cotejadorDecodificar(niv, m1130, m1140, m1180, m1190) {
-  const hte      = ((TAB[niv] + TAB[niv] * 0.60 + ARC[niv]) / 8) * 2;
-  const penHrRec = TAB[niv] / 8;
-  const penHrCCT = penHrRec + hte;
-  const horas_1130       = m1130 > 0 ? Math.round((m1130 / hte) * 100) / 100 : 0;
-  const comidas_exactas  = m1140 > 0 ? m1140 / TASA_COMIDA : 0;
-  const comidas          = Math.round(comidas_exactas);
-  const min_tol          = m1180 > 0 ? Math.round((m1180 / hte) * 60 * 10) / 10 : 0;
-  const horas_pen_recibo = m1190 > 0 ? Math.round((m1190 / penHrRec) * 100) / 100 : 0;
-  const horas_pen_cct    = m1190 > 0 ? Math.round((m1190 / penHrCCT) * 100) / 100 : 0;
-  return { horas_1130, comidas, comidas_exactas, min_tol, horas_pen_recibo, horas_pen_cct, hte, penHrRec, penHrCCT };
-}
-
-function cotejadorCalcSemana(sd, niv) {
-  let tH=0, tTE=0, tC=0, tIC=0, tTET=0, tPcct=0, tPrec=0, horasAcum=0;
-  const jl = localStorage.getItem('cte_jornada') || '00';
-  sd.dias.forEach(d => {
-    const h = d.horas || 0; const t = d.tipo || 'normal';
-    const vhe = ((TAB[niv] + TAB[niv]*0.60 + ARC[niv]) / 8) * 2;
-    const te = Math.round(h * vhe * 100) / 100;
-    const TTOL = {4:20,5:40,6:60,7:80,8:100,9:120,10:140,11:160,12:180,13:200,14:220,15:240,16:260};
-    const minTol = (t==='festivo' && h<12) ? 0 : (TTOL[h]||0);
-    const tet = Math.round((minTol/60)*vhe*100)/100;
-    let com = 0;
-    if (t==='festivo'||t==='descanso') { if(h>=12) com=2; else if(h>=2) com=1; }
-    else if (jl==='07') { if(h>=8) com=2; else if(h>=2) com=1; }
-    else { if(h>=5) com=2; else if(h>=2) com=1; }
-    const icm = Math.round(com * TASA_COMIDA * 100)/100;
-    const hd13 = Math.max(0,(horasAcum+h)-12) - Math.max(0,horasAcum-12);
-    const hd17 = Math.max(0,(horasAcum+h)-17) - Math.max(0,horasAcum-17);
-    tH+=h; tTE+=te; tC+=com; tIC+=icm; tTET+=tet;
-    tPcct += Math.round(hd13*((TAB[niv]/8)+vhe)*100)/100;
-    tPrec += Math.round(hd17*(TAB[niv]/8)*100)/100;
-    horasAcum+=h;
-  });
-  return { horas:tH, te:Math.round(tTE*100)/100, comidas:tC, ic:Math.round(tIC*100)/100, tol:Math.round(tTET*100)/100, penCCT:Math.round(tPcct*100)/100, penRecibo:Math.round(tPrec*100)/100 };
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// BÚSQUEDA POR PRIORIDAD DE MONTOS
-// 1º 1130 (TE medido) → 2º 1140 (comidas) → 3º 1180 (tolerancia) → 4º 1190 (penado)
-// Desempate final: semana más cercana a la fecha de referencia
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function cotejadorBuscarSemana(m1130, m1140, m1180, m1190, fechaRefISO, niv) {
-  const historial = JSON.parse(localStorage.getItem('cte_v4') || '{}');
-  const TOL_PESO = 1.0;   // tolerancia en $ para considerar coincidencia en un concepto
-
-  // Calcular resultados de todas las semanas con datos
-  const candidatos = [];
-  Object.keys(historial).forEach(k => {
-    const sd = historial[k];
-    if (!sd.dias || sd.dias.length === 0) return;
-    const tH = sd.dias.reduce((s,d) => s+(d.horas||0), 0);
-    if (tH === 0 && !sd.pagado) return;
-    const ds = cotejadorCalcSemana(sd, niv);
-    const ini = new Date(sd.dias[0].fecha + 'T12:00');
-    const fin = new Date(sd.dias[6].fecha + 'T12:00');
-    candidatos.push({ key:k, num:parseInt(k.slice(1)), sd, ds, ini, fin });
-  });
-
-  if (candidatos.length === 0) return null;
-
-  // Función auxiliar: ¿el monto del recibo coincide con el historial dentro de tolerancia?
-  const coincide = (mRec, mHist) => Math.abs(mRec - mHist) <= TOL_PESO;
-
-  // Filtrado progresivo: si al filtrar quedan 0, se queda la lista anterior
-  const filtrar = (lista, mRec, campo) => {
-    if (mRec === 0) return lista; // si no hay monto en el recibo, no filtrar
-    const filtrada = lista.filter(c => coincide(mRec, c.ds[campo]));
-    return filtrada.length > 0 ? filtrada : lista;
-  };
-
-  let lista = candidatos;
-  let pasosDesc = [];
-
-  // Paso 1: filtrar por 1130 (TE medido)
-  const tras1130 = filtrar(lista, m1130, 'te');
-  pasosDesc.push({ concepto:'1130 T.E.', antes: lista.length, despues: tras1130.length });
-  lista = tras1130;
-
-  // Paso 2: filtrar por 1140 (comidas)
-  const tras1140 = filtrar(lista, m1140, 'ic');
-  pasosDesc.push({ concepto:'1140 Comidas', antes: lista.length, despues: tras1140.length });
-  lista = tras1140;
-
-  // Paso 3: filtrar por 1180 (tolerancia)
-  const tras1180 = filtrar(lista, m1180, 'tol');
-  pasosDesc.push({ concepto:'1180 Tolerancia', antes: lista.length, despues: tras1180.length });
-  lista = tras1180;
-
-  // Paso 4: filtrar por 1190 (penado — fórmula empresa hr 17)
-  const tras1190 = filtrar(lista, m1190, 'penRecibo');
-  pasosDesc.push({ concepto:'1190 Penado', antes: lista.length, despues: tras1190.length });
-  lista = tras1190;
-
-  // Desempate final: semana más cercana a la fecha de referencia
-  const fd = fechaRefISO ? new Date(fechaRefISO + 'T12:00') : null;
-  let ganadora = lista[0];
-  if (fd && lista.length > 1) {
-    lista.forEach(c => {
-      const centro = new Date((c.ini.getTime() + c.fin.getTime()) / 2);
-      const cg = new Date((ganadora.ini.getTime() + ganadora.fin.getTime()) / 2);
-      if (Math.abs(fd - centro) < Math.abs(fd - cg)) ganadora = c;
-    });
-  }
-
-  return { ...ganadora, pasos: pasosDesc, totalCandidatos: candidatos.length, finalCandidatos: lista.length };
-}
-
-function cotejadorCalc() {
-  const niv = nivel;
-  const f$ = n => '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
-  const fD = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
-
-  // Leer todas las referencias del formulario
-  const refs = [];
-  document.querySelectorAll('[id^="cot-ref-fecha-"]').forEach(inp => {
-    const id = inp.id.replace('cot-ref-fecha-','');
-    const fecha = inp.value;
-    if (!fecha) return;
-    const m1130 = parseFloat(document.getElementById(`cot-ref-1130-${id}`)?.value) || 0;
-    const m1140 = parseFloat(document.getElementById(`cot-ref-1140-${id}`)?.value) || 0;
-    const m1180 = parseFloat(document.getElementById(`cot-ref-1180-${id}`)?.value) || 0;
-    const m1190 = parseFloat(document.getElementById(`cot-ref-1190-${id}`)?.value) || 0;
-    if (m1130+m1140+m1180+m1190 === 0) return;
-    refs.push({ id, fecha, m1130, m1140, m1180, m1190 });
-  });
-
-  if (refs.length === 0) { alert('Ingresa al menos una referencia con fecha y montos.'); return; }
-
-  const area = document.getElementById('cot-resultado');
-  let html = '';
-
-  const rowS = 'display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--cream);font-size:12px;';
-
-  refs.forEach((ref, idx) => {
-    const dec = cotejadorDecodificar(niv, ref.m1130, ref.m1140, ref.m1180, ref.m1190);
-    const totalRec = ref.m1130 + ref.m1140 + ref.m1180 + ref.m1190;
-    const sem = cotejadorBuscarSemana(ref.m1130, ref.m1140, ref.m1180, ref.m1190, ref.fecha, niv);
-
-    // ── Encabezado de referencia ──
-    html += `<div style="margin-bottom:20px;">
-      <div style="background:var(--blue);color:#fff;border-radius:10px 10px 0 0;padding:12px 16px;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;">
-        <span>📄 Referencia ${idx+1} — ${fD(ref.fecha)}</span>
-        <span style="font-family:'DM Mono',monospace;font-size:14px;color:#7dd3fc;">${f$(totalRec)}</span>
-      </div>
-      <div style="background:var(--white);border:1.5px solid var(--rule);border-top:none;border-radius:0 0 10px 10px;overflow:hidden;">`;
-
-    // ── Decodificación ──
-    html += `<div style="background:var(--cream);padding:8px 14px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Decodificación · Nivel ${niv} · Tasa TE: ${f$(dec.hte)}/hr</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--cream);">`;
-
-    const dc = (lbl, val, unit, color) => `<div style="padding:12px 12px;border-right:1px solid var(--cream);text-align:center;">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);margin-bottom:4px;">${lbl}</div>
-      <div style="font-family:'DM Mono',monospace;font-size:16px;font-weight:500;color:${color};">${val}<span style="font-size:9px;color:var(--muted);margin-left:2px;">${unit}</span></div>
-    </div>`;
-
-    html += dc('Horas TE (1130)', dec.horas_1130 > 0 ? dec.horas_1130 : '—', dec.horas_1130 > 0 ? 'hrs' : '', 'var(--blue)');
-    html += dc('Comidas (1140)', dec.comidas > 0 ? dec.comidas : '—', dec.comidas > 0 ? 'comidas' : '', 'var(--gold)');
-    html += dc('Tolerancia (1180)', dec.min_tol > 0 ? dec.min_tol.toFixed(1) : '—', dec.min_tol > 0 ? 'min' : '', 'var(--ink)');
-    html += dc('Hrs penadas (1190)', dec.horas_pen_cct > 0 ? dec.horas_pen_cct : '—', dec.horas_pen_cct > 0 ? 'hrs' : '', 'var(--gold)');
-    html += `</div>`;
-
-    // ── Cotejo con historial ──
-    if (!sem) {
-      html += `<div style="padding:16px;text-align:center;font-size:12px;color:var(--mid);">
-        ⚠️ No hay semanas registradas cercanas a ${fD(ref.fecha)}. Captura esa semana primero.
-      </div>`;
-    } else {
-      const ds = sem.ds; // ya calculado dentro del buscador
-      const totalHist = ds.te + ds.ic + ds.tol + ds.penRecibo;
-
-      const diffBadge = (v1, v2, tol) => {
-        const d = Math.abs(v1-v2);
-        const p = v2 > 0 ? d/v2 : (v1>0?1:0);
-        if (d<=tol) return {bg:'#e6f5ec',color:'var(--green)',txt:'✓'};
-        if (p<=0.10) return {bg:'#fff8e6',color:'var(--gold)',txt:`≈ ${f$(d)}`};
-        return {bg:'#fdecea',color:'var(--red)',txt:`▲ ${f$(d)}`};
-      };
-
-      const d1130 = diffBadge(ref.m1130, ds.te, 1);
-      const d1140 = diffBadge(ref.m1140, ds.ic, 0.5);
-      const d1180 = diffBadge(ref.m1180, ds.tol, 1);
-      const d1190 = diffBadge(ref.m1190, ds.penRecibo, 1);
-      const dTot  = diffBadge(totalRec, totalHist, 2);
-
-      const errs = [d1130,d1140,d1180].filter(x=>x.color==='var(--red)').length;
-      const warns= [d1130,d1140,d1180].filter(x=>x.color==='var(--gold)').length;
-      let mBg='#e6f5ec', mColor='var(--green)', mIcon='✅', mTxt='Coincide';
-      if (errs>=2)             { mBg='#fdecea'; mColor='var(--red)';  mIcon='❌'; mTxt='No coincide'; }
-      else if (errs||warns>=2) { mBg='#fff8e6'; mColor='var(--gold)'; mIcon='⚠️'; mTxt='Parcial'; }
-
-      // Panel de pasos del filtrado
-      const pasosCols = sem.pasos.map(p => {
-        const redujo = p.despues < p.antes;
-        const igual  = p.despues === p.antes;
-        const bg     = redujo ? '#e8f0ff' : '#fafaf8';
-        const color  = redujo ? 'var(--blue)' : 'var(--muted)';
-        return `<div style="text-align:center;padding:8px 6px;border-right:1px solid var(--cream);background:${bg};">
-          <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:${color};margin-bottom:3px;">${p.concepto}</div>
-          <div style="font-size:11px;font-weight:700;color:${color};">${p.antes} → ${p.despues}</div>
-          <div style="font-size:9px;color:var(--muted);">${igual ? 'sin cambio' : `−${p.antes - p.despues}`}</div>
-        </div>`;
-      }).join('');
-
-      const desempateTag = sem.finalCandidatos > 1
-        ? `<span style="font-size:9px;background:#fff8e6;color:var(--gold);padding:2px 7px;border-radius:8px;font-weight:700;">🎯 Desempate por fecha ref.</span>`
-        : `<span style="font-size:9px;background:#e6f5ec;color:var(--green);padding:2px 7px;border-radius:8px;font-weight:700;">🎯 Única coincidencia</span>`;
-
-      const pagTag = sem.sd.pagado
-        ? '<span style="font-size:9px;color:var(--green);"> ✓ Pagada</span>'
-        : '<span style="font-size:9px;color:var(--gold);"> ⏳ Pendiente</span>';
-
-      // Proceso de filtrado visible
-      html += `<div style="background:var(--cream);padding:8px 14px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">
-        Proceso de búsqueda — ${sem.totalCandidatos} semanas en historial
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:2px solid var(--rule);">
-        ${pasosCols}
-      </div>
-      <div style="padding:8px 14px;font-size:11px;color:var(--mid);border-bottom:1px solid var(--cream);background:#fafaf8;">
-        ${sem.finalCandidatos > 1
-          ? `⚖️ Quedaron <b>${sem.finalCandidatos}</b> semanas con montos similares — la fecha de referencia <b>${fD(ref.fecha)}</b> seleccionó la más cercana.`
-          : `✅ Se encontró <b>1</b> semana con montos coincidentes.`
-        }
-      </div>`;
-
-      const bRow = (lbl, vR, vH, badge) => (vR===0 && vH===0) ? '' :
-        `<div style="${rowS}"><span style="color:var(--mid)">${lbl}</span>
-        <div style="display:flex;gap:12px;align-items:center;">
-          <span style="font-family:'DM Mono',monospace;font-weight:500;color:var(--blue);">${f$(vR)}</span>
-          <span style="font-family:'DM Mono',monospace;font-weight:500;color:var(--green);">${f$(vH)}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:${badge.bg};color:${badge.color};">${badge.txt}</span>
-        </div></div>`;
-
-      html += `<div style="background:${mBg};padding:9px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid ${mBg==='#e6f5ec'?'#b4dfc3':mBg==='#fff8e6'?'#e8d48a':'#f5c6c3'};">
-        <div style="font-size:12px;font-weight:700;color:${mColor};">${mIcon} Sem. ${sem.num} · ${fD(sem.sd.dias[0].fecha)} – ${fD(sem.sd.dias[6].fecha)} ${pagTag}</div>
-        <div style="display:flex;gap:6px;align-items:center;">${desempateTag}<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:10px;background:${mBg};border:1px solid ${mColor};color:${mColor};">${mTxt}</span></div>
-      </div>
-      <div style="${rowS}background:var(--cream);border-bottom:1px solid var(--rule);">
-        <span style="font-size:9px;font-weight:700;color:var(--mid);">Concepto</span>
-        <div style="display:flex;gap:12px;">
-          <span style="font-size:9px;font-weight:700;color:var(--blue);">Recibo</span>
-          <span style="font-size:9px;font-weight:700;color:var(--green);">Historial</span>
-          <span style="font-size:9px;font-weight:700;color:var(--mid);">Dif.</span>
-        </div>
-      </div>
-      ${bRow(`1130 T.E. · ${dec.horas_1130} hrs recibo vs ${ds.horas} hrs historial`, ref.m1130, ds.te, d1130)}
-      ${bRow(`1140 Comidas · ${dec.comidas} recibo vs ${ds.comidas} historial`, ref.m1140, ds.ic, d1140)}
-      ${bRow('1180 TE Tolerancia', ref.m1180, ds.tol, d1180)}
-      ${ref.m1190>0||ds.penRecibo>0 ? bRow(`1190 T. penado recibo (hr 17+, sal÷8) <span style="font-size:9px;color:var(--gold)">CCT: ${f$(ds.penCCT)}</span>`, ref.m1190, ds.penRecibo, d1190) : ''}
-      <div style="${rowS}background:var(--cream);font-weight:700;border-bottom:none;">
-        <span>TOTAL</span>
-        <div style="display:flex;gap:12px;align-items:center;">
-          <span style="font-family:'DM Mono',monospace;font-weight:700;color:var(--blue);">${f$(totalRec)}</span>
-          <span style="font-family:'DM Mono',monospace;font-weight:700;color:var(--green);">${f$(totalHist)}</span>
-          <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:${dTot.bg};color:${dTot.color};">${dTot.txt}</span>
-        </div>
-      </div>`;
-    }
-
-    html += `</div></div>`;
-  });
-
-  area.innerHTML = html;
-  area.scrollIntoView({ behavior:'smooth', block:'start' });
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INIT
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
