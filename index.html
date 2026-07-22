@@ -518,7 +518,30 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 
 <div class="footer">
   <b>ControlTE</b> by PitaBot &nbsp;·&nbsp; PEMEX · STPRM · CCT 2025–2027 &nbsp;·&nbsp; Todos los derechos reservados
+  <div style="margin-top:8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">
+    ID de respaldo: <span id="uid-display">—</span>
+    <button onclick="copiarUid()" style="margin-left:6px;font-size:9px;padding:2px 6px;border:1px solid var(--rule);border-radius:4px;background:none;cursor:pointer;color:var(--muted)">Copiar</button>
+    <span id="uid-copiado" style="margin-left:4px;color:var(--blue,#1A3A6B)"></span>
+  </div>
 </div>
+
+<script>
+// Muestra el ID de respaldo (getUserKey) en pantalla, sin necesitar consola.
+// Útil para confirmar bajo qué identidad se está guardando este dispositivo,
+// o para comparar con el ID de otro dispositivo al hacer pruebas de sync.
+function mostrarUidEnPantalla() {
+  const el = document.getElementById('uid-display');
+  if (el) el.textContent = getUserKey();
+}
+function copiarUid() {
+  const uid = getUserKey();
+  navigator.clipboard.writeText(uid).then(() => {
+    const msg = document.getElementById('uid-copiado');
+    msg.textContent = '✓ copiado';
+    setTimeout(() => msg.textContent = '', 2000);
+  });
+}
+</script>
 
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -568,6 +591,29 @@ function licenciaActiva() {
   const lic = getLicencia();
   if (!lic) return false;
   return Date.now() < lic.expira;
+}
+
+// Verifica contra el bin de licencias si el código actual fue REVOCADO por
+// el administrador (panel aparte). Si lo fue, cierra la sesión localmente
+// aunque la fecha de expiración local todavía diga que hay días restantes.
+// Se corre al abrir la app y cada 15 minutos mientras sigue abierta.
+async function verificarRevocacion() {
+  const lic = getLicencia();
+  if (!lic || !lic.code) return; // sin licencia activa, nada que verificar
+  try {
+    const res = await fetch(JBIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
+    const data = await res.json();
+    const lista = data.record.codigos || [];
+    const entrada = lista.find(c => c.codigo === lic.code);
+    if (entrada && entrada.revocado) {
+      localStorage.removeItem('cte_lic');
+      alert('Tu acceso a ControlTE fue cancelado. Contacta a soporte si crees que es un error.');
+      location.reload();
+    }
+  } catch (e) {
+    // Si falla la verificación (sin internet, etc.), no bloquea al usuario —
+    // solo se reintenta la próxima vez.
+  }
 }
 
 function diasRestantes() {
@@ -657,7 +703,6 @@ function semData(s) {
 const JBIN_ID  = '6a30b258da38895dfec72c1e';
 const JBIN_KEY = '$2a$10$mKCTBP96l4oINrx2Z3uXbOTEGW/08f1Gd2g.ndODEp1eLEqu7p83W';
 const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
-
 
 // Congela en cada día de la semana los montos YA CALCULADOS (1130/1140/1180/1190,
 // tolerancia, prima dominical, subtotal) usando el salario/ARC vigentes de esa
@@ -930,7 +975,13 @@ async function initApp() {
     splash.classList.add('hide');
     setTimeout(() => { splash.style.display = 'none'; }, 400);
   }
+  mostrarUidEnPantalla();
   if (!licenciaActiva()) mostrarPaywall();
+
+  // Verifica si el código fue cancelado por el administrador: al abrir la
+  // app y luego cada 15 minutos mientras siga abierta.
+  verificarRevocacion();
+  setInterval(verificarRevocacion, 15 * 60 * 1000);
 }
 
 function actualizarUIEstado() {
