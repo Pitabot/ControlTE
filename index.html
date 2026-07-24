@@ -844,8 +844,8 @@ function semData(s) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // JSONBIN — base de datos de códigos (constantes movidas arriba)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const JBIN_ID  = '6a30b258da38895dfec72c1e';
-const JBIN_KEY = '$2a$10$mKCTBP96l4oINrx2Z3uXbOTEGW/08f1Gd2g.ndODEp1eLEqu7p83W';
+const JBIN_ID  = 'REEMPLAZAR_BIN_ID_LICENCIAS';
+const JBIN_KEY = 'REEMPLAZAR_MASTER_KEY';
 const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
 
 // Congela en cada día de la semana los montos YA CALCULADOS (1130/1140/1180/1190,
@@ -882,7 +882,7 @@ function guardar() {
 // Bin separado del de códigos, un registro por usuario
 // identificado por su código de licencia activado.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SYNC_BIN_ID  = '6a34089ef5f4af5e29095b02';
+const SYNC_BIN_ID  = 'REEMPLAZAR_BIN_ID_SYNC';
 const SYNC_BIN_URL = `https://api.jsonbin.io/v3/b/${SYNC_BIN_ID}`;
 
 let syncTimer = null;
@@ -1493,9 +1493,10 @@ function setH(i, v) {
     return;
   }
   semData(semana).dias[i].horas = nuevas_horas;
+  guardar();   // FIX: sin esto, las horas solo vivían en memoria y se perdían al recargar
   render();
 }
-function setT(i, t) { semData(semana).dias[i].tipo = t; render(); }
+function setT(i, t) { semData(semana).dias[i].tipo = t; guardar(); render(); }   // FIX: mismo hoyo
 function cambiarSemana(d) {
   const nueva = Math.max(1, semana + d);
   if (d > 0 && !puedeUsarSemana(nueva)) {
@@ -1505,9 +1506,10 @@ function cambiarSemana(d) {
     return;
   }
   semana = nueva;
+  guardar();   // FIX: persiste la posicion (cte_semana) y la estructura creada al visitar
   render();
 }
-function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; render(); }
+function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; guardar(); render(); }   // FIX: mismo hoyo
 
 function cambiarJornada() {
   jornada = document.getElementById('sel-jornada').value;
@@ -1523,6 +1525,7 @@ function cambiarNivel() {
   document.getElementById('chip-sal').textContent  = `$${sal.toFixed(2)}/día`;
   document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
   document.getElementById('sal-visible').textContent = `$${sal.toFixed(2)}`;
+  guardar();   // FIX: el nivel elegido no se persistia hasta que otra accion llamara guardar()
   render();
 }
 function showTab(id) {
