@@ -395,11 +395,11 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 <!-- ═══ PAYWALL ═══ -->
 <div id="paywall">
   <div class="paywall-card">
-    <div class="paywall-icon">💰</div>
-    <div class="paywall-title">Versión gratuita completada</div>
+    <div class="paywall-icon">🔒</div>
+    <div class="paywall-title">Se requiere código de acceso</div>
     <div class="paywall-sub">
-      Ya registraste tus <strong>2 semanas de prueba</strong>.<br>
-      Contáctame por WhatsApp para desbloquear el acceso completo y seguir registrando tus semanas.
+      ControlTE funciona con un código de acceso — de pago o de prueba (15 días).<br>
+      Contáctame por WhatsApp para conseguir el tuyo.
     </div>
 
     <button class="wa-btn" onclick="contactarWA()">
@@ -410,7 +410,13 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
     <div class="unlock-sep">¿Ya tienes tu código de acceso?</div>
     <div class="unlock-row">
       <input class="unlock-inp" id="unlock-inp" placeholder="Ingresa tu código" maxlength="12">
+    </div>
+    <div class="unlock-row" style="margin-top:6px">
+      <input class="unlock-inp" id="unlock-tel" type="tel" placeholder="Tu número de teléfono" maxlength="15">
       <button class="unlock-btn" onclick="validarCodigo()">Activar</button>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:4px">
+      Primera vez: escribe tu número completo. Si cambias de teléfono, solo pide los últimos 4 dígitos.
     </div>
     <div class="unlock-msg" id="unlock-msg"></div>
   </div>
@@ -669,6 +675,10 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
 <script>
 // Muestra el ID de respaldo (getUserKey) en pantalla, sin necesitar consola.
 // Útil para confirmar bajo qué identidad se está guardando este dispositivo,
@@ -737,26 +747,24 @@ function licenciaActiva() {
   return Date.now() < lic.expira;
 }
 
-// Verifica contra el bin de licencias si el código actual fue REVOCADO por
-// el administrador (panel aparte). Si lo fue, cierra la sesión localmente
-// aunque la fecha de expiración local todavía diga que hay días restantes.
-// Se corre al abrir la app y cada 15 minutos mientras sigue abierta.
+// Verifica en Firestore si expira (la fecha real, controlada solo por el
+// admin) ya pasó. Nota: aunque esta funcion fallara o nunca corriera, las
+// reglas de "semanas" YA rechazan lectura/escritura cuando expira venció
+// — esto es solo para avisarle al usuario con un mensaje claro, en vez de
+// dejarlo adivinando por qué de repente nada guarda.
 async function verificarRevocacion() {
-  const lic = getLicencia();
-  if (!lic || !lic.code) return; // sin licencia activa, nada que verificar
+  if (!fbCodigo) return;
   try {
-    const res = await fetch(JBIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
-    const data = await res.json();
-    const lista = data.record.codigos || [];
-    const entrada = lista.find(c => c.codigo === lic.code);
-    if (entrada && entrada.revocado) {
+    const snap = await db.collection('cuentas').doc(fbCodigo).get();
+    if (!snap.exists) return;
+    const cuenta = snap.data();
+    if (cuenta.expira && cuenta.expira <= Date.now()) {
       localStorage.removeItem('cte_lic');
-      alert('Tu acceso a ControlTE fue cancelado. Contacta a soporte si crees que es un error.');
+      alert('Tu acceso a ControlTE venció. Contacta a soporte para renovar.');
       location.reload();
     }
   } catch (e) {
-    // Si falla la verificación (sin internet, etc.), no bloquea al usuario —
-    // solo se reintenta la próxima vez.
+    // Sin internet u otro fallo: no bloquea al usuario, se reintenta despues.
   }
 }
 
@@ -775,17 +783,11 @@ function semanasUsadas() {
 }
 
 function puedeUsarSemana(s) {
-  if (licenciaActiva()) return true;
-  const d = JSON.parse(localStorage.getItem('cte_v4') || '{}');
-  const k = 's' + s;
-  // Si esta semana ya tiene datos, puede seguir editándola
-  const tieneDatos = d[k] && d[k].dias && d[k].dias.some(dia => (dia.horas||0) > 0);
-  if (tieneDatos) return true;
-  // Contar semanas distintas con datos
-  const semsConDatos = Object.keys(d).filter(k2 =>
-    d[k2].dias && d[k2].dias.some(dia => (dia.horas||0) > 0)
-  );
-  return semsConDatos.length < 2;
+  // Ya NO hay modo gratis sin codigo. Toda captura requiere una cuenta
+  // activa (sea plan pago o un codigo de prueba de 15 dias que tu creas
+  // manualmente en Firestore, plan:"trial"). Sin codigo canjeado, no se
+  // puede capturar ni una sola hora.
+  return licenciaActiva();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -842,12 +844,34 @@ function semData(s) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// JSONBIN — base de datos de códigos (constantes movidas arriba)
+// FIREBASE — reemplaza JSONBin por completo.
+// firebaseConfig NO es secreto (identifica el proyecto, no da permisos).
+// La seguridad real vive en firestore.rules, ya desplegado en controlte-prod.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const firebaseConfig = {
+  apiKey: "AIzaSyDEaVniPdpXhbiRT6qYWEJuu9hyTkghnaY",
+  authDomain: "rdl-production.firebaseapp.com",
+  projectId: "rdl-production",
+  storageBucket: "rdl-production.firebasestorage.app",
+  messagingSenderId: "510898405169",
+  appId: "1:510898405169:web:77f36cf5215f82be013a10",
+  measurementId: "G-KENSFN9PPR",
+};
 
-const JBIN_ID  = '6a30b258da38895dfec72c1e';
-const JBIN_KEY = '$2a$10$mKCTBP96l4oINrx2Z3uXbOTEGW/08f1Gd2g.ndODEp1eLEqu7p83W';
-const JBIN_URL = `https://api.jsonbin.io/v3/b/${JBIN_ID}`;
+const fbApp = firebase.initializeApp(firebaseConfig);
+const auth  = firebase.auth();
+const db    = firebase.firestore();
+
+let fbUid    = null;   // se llena al autenticar, ver initAuthFirebase()
+let fbCodigo = null;   // codigo de licencia activo, una vez canjeado
+
+// Hash simple para no guardar el telefono en texto plano (no es criptografico,
+// solo evita que se lea a simple vista en la consola de Firebase).
+function hashSimple(texto) {
+  let h = 0;
+  for (const c of texto) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return h.toString(16);
+}
 
 // Congela en cada día de la semana los montos YA CALCULADOS (1130/1140/1180/1190,
 // tolerancia, prima dominical, subtotal) usando el salario/ARC vigentes de esa
@@ -875,147 +899,79 @@ function guardar() {
   localStorage.setItem('cte_nivel',   nivel);
   localStorage.setItem('cte_semana',  semana);
   localStorage.setItem('cte_jornada', jornada);
-  syncCloudDebounced();
+  guardarSemanaFirestoreDebounced();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// SINCRONIZACIÓN EN LA NUBE — respaldo automático
-// Bin separado del de códigos, un registro por usuario
-// identificado por su código de licencia activado.
+// SINCRONIZACIÓN CON FIRESTORE — una semana = un documento.
+// A diferencia del bin unico de antes, esto NUNCA puede pisar otra
+// semana ni el historial de otro usuario: cada escritura toca
+// solo cuentas/{codigo}/semanas/{sID}.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const SYNC_BIN_ID  = '6a34089ef5f4af5e29095b02';
-const SYNC_BIN_URL = `https://api.jsonbin.io/v3/b/${SYNC_BIN_ID}`;
-
 let syncTimer = null;
-function syncCloudDebounced() {
+function guardarSemanaFirestoreDebounced() {
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(syncToCloud, 60000); // espera 1 min de inactividad antes de subir a la nube
+  syncTimer = setTimeout(guardarSemanaFirestore, 2000); // 2s de inactividad, luego sube
 }
 
-// Si el usuario minimiza/cierra la app antes de que pasen los 60s del
-// debounce normal, forzamos un sync inmediato para no perder ese último
-// tramo de cambios (el navegador puede matar el setTimeout pendiente).
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && syncTimer) {
-    clearTimeout(syncTimer);
-    syncToCloud();
-  }
-});
-window.addEventListener('pagehide', () => {
-  if (syncTimer) { clearTimeout(syncTimer); syncToCloud(); }
-});
-
-function getUserKey() {
-  let uid = localStorage.getItem('cte_uid');
-  if (!uid) {
-    const legacyAnon = localStorage.getItem('cte_anon_id');
-    const legacyLic  = JSON.parse(localStorage.getItem('cte_lic') || 'null');
-    uid = legacyAnon || (legacyLic && legacyLic.code) ||
-          ('U-' + Math.random().toString(36).slice(2, 10).toUpperCase() + Date.now().toString(36).toUpperCase());
-    localStorage.setItem('cte_uid', uid);
-  }
-  return uid;
-}
-
-// Igual que getUserKey(), pero sin crear un uid nuevo si no existe todavía.
-// Sirve para saber si YA tenemos una identidad conocida (licencia/anon previos)
-// antes de intentar restaurar — evita "quemar" un uid aleatorio de forma
-// prematura, justo antes de que el usuario tenga oportunidad de introducir
-// su código de licencia real tras borrar caché.
-function tieneIdentidadConocida() {
-  if (localStorage.getItem('cte_uid')) return true;
-  if (localStorage.getItem('cte_anon_id')) return true;
-  const lic = JSON.parse(localStorage.getItem('cte_lic') || 'null');
-  return !!(lic && lic.code);
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// FUSIÓN MANUAL DE HISTORIALES FRAGMENTADOS
-// Úsalo en consola si un usuario tiene datos repartidos en varios userKeys
-// antiguos (por haber activado más de un código antes de este arreglo).
-// Ejemplo: fusionarHistoriales(['Y-ADLU805','ANON-V6YWXOUE'])
-// Fusiona esas llaves viejas DENTRO del cte_uid actual, sin pisar semanas
-// que ya existan (conserva la versión con más horas totales si hay choque).
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async function fusionarHistoriales(userKeysViejos) {
-  const destino = getUserKey();
-  const res = await fetch(SYNC_BIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
-  const data = await res.json();
-  const registro = (data.record && data.record.usuarios) ? data.record.usuarios : {};
-
-  if (!registro[destino]) registro[destino] = { datos: {}, nivel, semana, jornada, actualizado: Date.now() };
-  const datosDestino = registro[destino].datos;
-
-  let semanasFusionadas = 0;
-  for (const uk of userKeysViejos) {
-    const origen = registro[uk];
-    if (!origen || !origen.datos) continue;
-    for (const [semKey, semData] of Object.entries(origen.datos)) {
-      const totalOrigen = (semData.dias || []).reduce((s, d) => s + (d.horas || 0), 0);
-      const existente = datosDestino[semKey];
-      const totalExistente = existente ? (existente.dias || []).reduce((s, d) => s + (d.horas || 0), 0) : -1;
-      if (!existente || totalOrigen > totalExistente) {
-        datosDestino[semKey] = semData;
-        semanasFusionadas++;
-      }
-    }
-  }
-
-  registro[destino].datos = datosDestino;
-  registro[destino].actualizado = Date.now();
-
-  await fetch(SYNC_BIN_URL, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY },
-    body: JSON.stringify({ usuarios: registro })
-  });
-
-  console.log(`Fusión completa: ${semanasFusionadas} semanas fusionadas en ${destino}`);
-  return { destino, semanasFusionadas };
-}
-
-async function syncToCloud() {
+async function guardarSemanaFirestore() {
+  if (!fbCodigo || !fbUid) { setSyncStatus('error'); return; } // sin sesion activa, no hay a donde escribir
   try {
-    const userKey = getUserKey();
-    const res = await fetch(SYNC_BIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
-    const data = await res.json();
-    const registro = (data.record && data.record.usuarios) ? data.record.usuarios : {};
-
-    registro[userKey] = {
-      datos, nivel, semana, jornada,
-      actualizado: Date.now()
-    };
-
-    await fetch(SYNC_BIN_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JBIN_KEY },
-      body: JSON.stringify({ usuarios: registro })
-    });
+    const sd = semData(semana);
+    await db.collection('cuentas').doc(fbCodigo)
+             .collection('semanas').doc('s' + semana)
+             .set(sd);
     setSyncStatus('ok');
   } catch (e) {
     setSyncStatus('error');
   }
 }
 
+// Se dispara si el usuario minimiza/cierra antes de que pase el debounce
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && syncTimer) {
+    clearTimeout(syncTimer);
+    guardarSemanaFirestore();
+  }
+});
+window.addEventListener('pagehide', () => {
+  if (syncTimer) { clearTimeout(syncTimer); guardarSemanaFirestore(); }
+});
+
+// getUserKey() ya no identifica al usuario (eso lo hace Firebase Auth con
+// fbUid). Se conserva solo como etiqueta visible en pantalla ("ID de respaldo")
+// para que el usuario pueda comparar entre dispositivos si algo se ve raro.
+function getUserKey() {
+  return fbCodigo || fbUid || 'sin-sesion';
+}
+
+// NOTA: fusionarHistoriales() y la vieja syncToCloud() (contra JSONBin) se
+// eliminaron aqui — ya no aplican. En el diseño Firestore cada semana es un
+// documento propio, asi que no puede fragmentarse por activar otro codigo;
+// y la fusion de historiales viejos (como la de Raul) ya se resolvio una
+// vez, en el script de migracion, antes de subir los datos.
+
 async function restaurarDesdeNube() {
+  if (!fbCodigo) return false;   // sin codigo canjeado, no hay cuenta que leer
   try {
-    const userKey = getUserKey();
-    const res = await fetch(SYNC_BIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
-    const data = await res.json();
-    const registro = (data.record && data.record.usuarios) ? data.record.usuarios : {};
-    const mio = registro[userKey];
-    if (mio && mio.datos) {
-      datos   = mio.datos;
-      nivel   = mio.nivel   || nivel;
-      semana  = mio.semana  || semana;
-      jornada = mio.jornada || jornada;
-      localStorage.setItem('cte_v4',      JSON.stringify(datos));
-      localStorage.setItem('cte_nivel',   nivel);
-      localStorage.setItem('cte_semana',  semana);
-      localStorage.setItem('cte_jornada', jornada);
-      return true;
-    }
-    return false;
+    const cuentaRef = db.collection('cuentas').doc(fbCodigo);
+    const cuentaSnap = await cuentaRef.get();
+    if (!cuentaSnap.exists) return false;
+
+    const perfil = cuentaSnap.data();
+    nivel   = perfil.nivel   || nivel;
+    jornada = perfil.jornada || jornada;
+
+    const semanasSnap = await cuentaRef.collection('semanas').get();
+    if (semanasSnap.empty) return false;
+
+    datos = {};
+    semanasSnap.forEach(d => { datos[d.id] = d.data(); });
+
+    localStorage.setItem('cte_v4',      JSON.stringify(datos));
+    localStorage.setItem('cte_nivel',   nivel);
+    localStorage.setItem('cte_jornada', jornada);
+    return true;
   } catch (e) {
     return false;
   }
@@ -1036,84 +992,107 @@ function setSyncStatus(estado) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // VALIDACIÓN DE CÓDIGOS DE ACCESO
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Canje de codigo. Ya NO decide nada por si mismo: propone una escritura
+// y deja que firestore.rules acepte o rechace. Dos caminos posibles:
+//  - Primer canje (codigo virgen): pide codigo + telefono completo.
+//  - Dispositivo nuevo (codigo con dueño): pide codigo + ultimos 4 digitos.
+// La app detecta cual aplica leyendo el documento antes de intentar.
 async function validarCodigo() {
   const input = document.getElementById('unlock-inp');
+  const telInput = document.getElementById('unlock-tel'); // agregar este campo al HTML del paywall
   const msg = document.getElementById('unlock-msg');
-  const raw = input.value.trim().toUpperCase();
+  const raw = (input.value || '').trim().toUpperCase();
+  const tel = (telInput ? telInput.value : '').trim();
 
   if (!raw) { msg.innerText = "Escribe un código."; return; }
+  if (!tel) { msg.innerText = "Escribe tu número de teléfono."; return; }
+  if (!fbUid) {
+    msg.innerText = "Conectando...";
+    try {
+      const cred = await auth.signInAnonymously();
+      fbUid = cred.user.uid;
+    } catch (e) {
+      msg.className = "unlock-msg err";
+      msg.innerText = "Sin conexión. Intenta de nuevo.";
+      return;
+    }
+  }
   msg.innerText = "Verificando...";
 
+  const ref = db.collection('cuentas').doc(raw);
+
   try {
-    const res = await fetch(JBIN_URL, { headers: { 'X-Master-Key': JBIN_KEY } });
-    const data = await res.json();
-    let lista = data.record.codigos;
-
-    const index = lista.findIndex(c => c.codigo === raw);
-    const encontrado = lista[index];
-
-    if (encontrado) {
-      if (encontrado.usado) {
-        msg.className = "unlock-msg err";
-        msg.innerText = "Este código ya fue utilizado.";
-        return;
-      }
-
-      lista[index].usado = true;
-
-      await fetch(JBIN_URL, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Master-Key': JBIN_KEY 
-        },
-        body: JSON.stringify({ codigos: lista })
-      });
-
-      let dias = encontrado.plan === 'week' ? 7 : (encontrado.plan === 'month' ? 30 : 365);
-      setLicencia({
-        code: raw,
-        activado: Date.now(),
-        expira: Date.now() + (dias * 24 * 60 * 60 * 1000)
-      });
-
-      msg.className = "unlock-msg ok";
-      msg.innerText = "¡Activado! Buscando tu historial en la nube...";
-
-      // Con el código recién activado, getUserKey() ya tiene identidad real
-      // (el código). Restauramos aquí mismo, ANTES de recargar, para que si
-      // había historial guardado bajo este código, aparezca de inmediato.
-      await restaurarDesdeNube();
-
-      setTimeout(() => location.reload(), 1500);
-
-    } else {
+    const snap = await ref.get();
+    if (!snap.exists) {
       msg.className = "unlock-msg err";
       msg.innerText = "Código no válido.";
+      return;
     }
+
+    const cuenta = snap.data();
+    const esPrimerCanje = (cuenta.uids || []).length === 0;
+
+    if (esPrimerCanje) {
+      await ref.update({
+        uids: firebase.firestore.FieldValue.arrayUnion(fbUid),
+        telHash:  hashSimple(tel),
+        tel4Hash: hashSimple(tel.slice(-4))
+      });
+    } else {
+      // Dispositivo nuevo: el campo tel4 del input se compara contra
+      // tel4Hash guardado. Si no coincide, la regla rechaza sola.
+      await ref.update({
+        uids: firebase.firestore.FieldValue.arrayUnion(fbUid),
+        intento4: hashSimple(tel.slice(-4))
+      });
+    }
+
+    fbCodigo = raw;
+    localStorage.setItem('cte_codigo', raw);
+
+    let dias = cuenta.plan === 'week' ? 7 : (cuenta.plan === 'month' ? 30 : 365);
+    setLicencia({
+      code: raw,
+      activado: Date.now(),
+      expira: cuenta.expira || (Date.now() + dias * 24 * 60 * 60 * 1000)
+    });
+
+    msg.className = "unlock-msg ok";
+    msg.innerText = "¡Activado! Buscando tu historial...";
+    await restaurarDesdeNube();
+    setTimeout(() => location.reload(), 1500);
+
   } catch (err) {
-    msg.innerText = "Error de conexión.";
+    // Aqui caen los rechazos de las reglas: codigo ya tiene dueño y
+    // los 4 digitos no coinciden, o cualquier otro intento no autorizado.
+    msg.className = "unlock-msg err";
+    msg.innerText = "No se pudo activar. Verifica tu código y teléfono.";
   }
 }
 
 async function initApp() {
   const splash = document.getElementById('splash');
 
-  // Si no hay datos locales (caché borrado) Y ya sabemos qué identidad usar
-  // (había una licencia o anon_id previos), intenta restaurar desde la nube.
-  // Si NO hay ninguna identidad conocida todavía (caché recién borrado, sin
-  // haber introducido código), NO restauramos aquí — esperamos a que el
-  // usuario introduzca su código en el paywall; ahí sí se restaura (ver
-  // validarCodigo), usando esa identidad real en vez de una inventada.
+  // PRIMER PASO SIEMPRE: autenticar con Firebase. Sin esto, ninguna
+  // lectura/escritura a Firestore va a funcionar (las reglas exigen
+  // request.auth != null en todos los casos).
+  try {
+    const cred = await auth.signInAnonymously();
+    fbUid = cred.user.uid;
+  } catch (e) {
+    fbUid = null;
+  }
+
+  fbCodigo = localStorage.getItem('cte_codigo') || null;
+
   const sinDatosLocales = Object.keys(datos).length === 0;
-  if (sinDatosLocales && tieneIdentidadConocida()) {
+  if (sinDatosLocales && fbCodigo) {
+    // Ya hay codigo conocido de una sesion anterior: intenta restaurar
     const restaurado = await restaurarDesdeNube();
-    if (restaurado) {
-      cambiarSemana(0);
-    }
-  } else if (!sinDatosLocales) {
-    // Si ya hay datos, sube un respaldo silencioso al cargar
-    syncCloudDebounced();
+    if (restaurado) cambiarSemana(0);
+  } else if (!sinDatosLocales && fbCodigo) {
+    // Ya hay datos y sesion: sube un respaldo silencioso de la semana actual
+    guardarSemanaFirestoreDebounced();
   }
 
   if (splash) {
@@ -1123,8 +1102,7 @@ async function initApp() {
   mostrarUidEnPantalla();
   if (!licenciaActiva()) mostrarPaywall();
 
-  // Verifica si el código fue cancelado por el administrador: al abrir la
-  // app y luego cada 15 minutos mientras siga abierta.
+  // Verifica si el código fue cancelado por el administrador (expira <= ahora)
   verificarRevocacion();
   setInterval(verificarRevocacion, 15 * 60 * 1000);
 }
@@ -1253,25 +1231,19 @@ function actualizarEstado() {
   if (licenciaActiva()) {
     const dias = diasRestantes();
     const lic  = getLicencia();
-    const nom  = { week:'semana', month:'mes', year:'año' };
+    const nom  = { week:'semana', month:'mes', year:'año', trial:'prueba' };
     dot.className  = 'status-dot active';
     txt.textContent = `✓ Activo — ${dias} días`;
-    bar.style.borderLeftColor = 'var(--green)';
-    bar.style.background = '#f0faf4';
-    ftxt.innerHTML = `<b style="color:var(--green)">✅ Licencia activa — Plan ${nom[lic.plan]}</b>`;
-    fsub.textContent = `Vence en ${dias} día${dias!==1?'s':''}.`;
-    fw1.className = 'fweek used';
-    fw2.className = 'fweek used';
+    bar.style.display = 'none';   // la barra de "semanas gratis" ya no aplica
   } else {
-    const usadas = semanasUsadas();
     dot.className  = 'status-dot free';
-    txt.textContent = `Gratis · ${usadas}/2`;
-    fw1.className = `fweek ${usadas >= 1 ? 'used' + (usadas===1?' last':'') : 'free'}`;
-    fw2.className = `fweek ${usadas >= 2 ? 'used last' : 'free'}`;
-    ftxt.innerHTML = `<b>Semanas usadas: ${usadas} / 2</b>`;
-    fsub.textContent = usadas >= 2
-      ? '⛔ Límite alcanzado — activa tu plan para continuar'
-      : `Tienes ${2 - usadas} semana${2-usadas!==1?'s':''} gratuita${2-usadas!==1?'s':''} disponible${2-usadas!==1?'s':''}`;
+    txt.textContent = 'Sin acceso';
+    bar.style.display = 'block';
+    bar.style.borderLeftColor = 'var(--red, #B52B27)';
+    ftxt.innerHTML = '<b>Sin código activo</b>';
+    fsub.textContent = 'Escribe tu código de acceso para empezar a capturar.';
+    fw1.style.display = 'none';
+    fw2.style.display = 'none';
   }
 }
 
