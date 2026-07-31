@@ -1075,9 +1075,17 @@ async function initApp() {
   // PRIMER PASO SIEMPRE: autenticar con Firebase. Sin esto, ninguna
   // lectura/escritura a Firestore va a funcionar (las reglas exigen
   // request.auth != null en todos los casos).
+  // Si el navegador ya tiene una sesion anonima guardada (auth.currentUser),
+  // la reutilizamos en vez de crear una nueva cada vez que se carga la
+  // pagina — crear una nueva pisaba el uid ya sellado en uids[] y dejaba
+  // a la app sin permisos aunque el login original hubiera sido correcto.
   try {
-    const cred = await auth.signInAnonymously();
-    fbUid = cred.user.uid;
+    if (auth.currentUser) {
+      fbUid = auth.currentUser.uid;
+    } else {
+      const cred = await auth.signInAnonymously();
+      fbUid = cred.user.uid;
+    }
   } catch (e) {
     fbUid = null;
   }
