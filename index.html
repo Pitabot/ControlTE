@@ -845,20 +845,19 @@ function semData(s) {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FIREBASE — reemplaza JSONBin por completo.
-// firebaseConfig NO es secreto (identifica el proyecto, no da permisos).
+// uids: [fbUid], NO es secreto (identifica el proyecto, no da permisos).
 // La seguridad real vive en firestore.rules, ya desplegado en controlte-prod.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const firebaseConfig = {
-  apiKey: "AIzaSyDEaVniPdpXhbiRT6qYWEJuu9hyTkghnaY",
-  authDomain: "rdl-production.firebaseapp.com",
-  projectId: "rdl-production",
-  storageBucket: "rdl-production.firebasestorage.app",
-  messagingSenderId: "510898405169",
-  appId: "1:510898405169:web:77f36cf5215f82be013a10",
-  measurementId: "G-KENSFN9PPR",
+const uids: [fbUid], = {
+  apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
+  authDomain: "controlte-prod.firebaseapp.com",
+  projectId: "controlte-prod",
+  storageBucket: "controlte-prod.firebasestorage.app",
+  messagingSenderId: "1092890982693",
+  appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
 
-const fbApp = firebase.initializeApp(firebaseConfig);
+const fbApp = firebase.initializeApp(uids: [fbUid],);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
 
