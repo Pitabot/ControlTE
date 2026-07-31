@@ -926,6 +926,16 @@ async function guardarSemanaFirestore() {
   }
 }
 
+// AUTOGUARDADO PERIÓDICO — igual que el autoguardado de Excel: sin importar
+// si el guardado disparado por edición falló (mala señal, sesión que aún
+// no cargó, etc.), este intervalo reintenta solo cada 15s mientras la
+// pestaña esté abierta. guardarSemanaFirestore() ya es segura de repetir
+// (usa .set(), no crea duplicados), así que no hay riesgo en llamarla
+// de mas — si ya estaba guardado, simplemente vuelve a escribir lo mismo.
+setInterval(() => {
+  if (fbCodigo && fbUid) guardarSemanaFirestore();
+}, 15000);
+
 // Se dispara si el usuario minimiza/cierra antes de que pase el debounce
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && syncTimer) {
@@ -1137,7 +1147,7 @@ function showTab(id) {
   if(event) event.currentTarget.classList.add('active');
 }
 
-window.onload = () => { /* El splash se maneja con el botón */ };
+window.onload = () => { initApp(); };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CÁLCULOS CCT 2025-2027 (VERSIÓN FINAL UNIFICADA)
