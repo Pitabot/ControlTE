@@ -845,10 +845,10 @@ function semData(s) {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // FIREBASE — reemplaza JSONBin por completo.
-// uids: [fbUid], NO es secreto (identifica el proyecto, no da permisos).
+// firebaseConfig NO es secreto (identifica el proyecto, no da permisos).
 // La seguridad real vive en firestore.rules, ya desplegado en controlte-prod.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const uids: [fbUid], = {
+const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
   projectId: "controlte-prod",
@@ -857,7 +857,7 @@ const uids: [fbUid], = {
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
 
-const fbApp = firebase.initializeApp(uids: [fbUid],);
+const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
 
@@ -1041,7 +1041,7 @@ async function validarCodigo() {
       // Dispositivo nuevo: el campo tel4 del input se compara contra
       // tel4Hash guardado. Si no coincide, la regla rechaza sola.
       await ref.update({
-        : firebase.firestore.FieldValue.arrayUnion(fbUid),
+        uids: firebase.firestore.FieldValue.arrayUnion(fbUid),
         intento4: hashSimple(tel.slice(-4))
       });
     }
