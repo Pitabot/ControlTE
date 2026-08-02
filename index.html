@@ -971,12 +971,43 @@ async function restaurarDesdeNube() {
     const semanasSnap = await cuentaRef.collection('semanas').get();
     if (semanasSnap.empty) return false;
 
-    datos = {};
-    semanasSnap.forEach(d => { datos[d.id] = d.data(); });
+    // FUSIÓN, no reemplazo. Varios dispositivos pueden tener capturas que
+    // el otro no tiene todavía (ej.: laptop desactualizada + celular con
+    // semanas nuevas). Para cada semana, nos quedamos con la version cuyo
+    // 'congelado' (timestamp de ultimo guardado) sea mas reciente. Si una
+    // semana solo existe en un lado (local o nube), esa version se
+    // conserva sin tocar — nunca se borra nada por diferencia de datos.
+    let huboCambiosLocales = false;
+    semanasSnap.forEach(d => {
+      const remota = d.data();
+      const local  = datos[d.id];
+      const remotaTS = remota.congelado || 0;
+      const localTS  = local ? (local.congelado || 0) : -1;
+      if (!local || remotaTS > localTS) {
+        datos[d.id] = remota;
+        huboCambiosLocales = true;
+      }
+    });
 
     localStorage.setItem('cte_v4',      JSON.stringify(datos));
     localStorage.setItem('cte_nivel',   nivel);
     localStorage.setItem('cte_jornada', jornada);
+
+    // Si el local tenia semanas mas nuevas que la nube (ej.: se acaba de
+    // capturar algo con mala señal y no habia subido aun), las subimos
+    // ahora que sí hay conexión, para que el otro dispositivo las reciba
+    // en su proximo restaurarDesdeNube().
+    const semanasRemotasIds = new Set(semanasSnap.docs.map(d => d.id));
+    for (const sID of Object.keys(datos)) {
+      const local = datos[sID];
+      const localTS = local.congelado || 0;
+      const enNube = semanasRemotasIds.has(sID);
+      const remotaTS = enNube ? (semanasSnap.docs.find(d => d.id === sID).data().congelado || 0) : -1;
+      if (!enNube || localTS > remotaTS) {
+        await cuentaRef.collection('semanas').doc(sID).set(local);
+      }
+    }
+
     return true;
   } catch (e) {
     return false;
@@ -1099,14 +1130,18 @@ async function initApp() {
 
   fbCodigo = localStorage.getItem('cte_codigo') || null;
 
-  const sinDatosLocales = Object.keys(datos).length === 0;
-  if (sinDatosLocales && fbCodigo) {
-    // Ya hay codigo conocido de una sesion anterior: intenta restaurar
+  // Siempre fusiona con la nube al arrancar, sin importar si ya habia
+  // datos locales. restaurarDesdeNube() ahora hace merge semana por
+  // semana (no reemplaza todo), asi que es seguro llamarla siempre:
+  // si el local esta mas actualizado que la nube en alguna semana, esa
+  // version local se conserva y ademas se sube; si la nube tiene algo
+  // que el local no tiene, se agrega. Antes, un dispositivo con datos
+  // locales viejos nunca volvia a consultar la nube, y podia terminar
+  // pisando semanas que otro dispositivo ya habia respaldado.
+  if (fbCodigo) {
     const restaurado = await restaurarDesdeNube();
     if (restaurado) cambiarSemana(0);
-  } else if (!sinDatosLocales && fbCodigo) {
-    // Ya hay datos y sesion: sube un respaldo silencioso de la semana actual
-    guardarSemanaFirestoreDebounced();
+    else guardarSemanaFirestoreDebounced();
   }
 
   if (splash) {
