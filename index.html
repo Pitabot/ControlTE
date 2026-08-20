@@ -777,6 +777,56 @@ function diasRestantes() {
   return Math.max(0, Math.ceil((lic.expira - Date.now()) / 86400000));
 }
 
+// Clientes que ya tenían una licencia local (cte_lic) válida ANTES de esta
+// versión con Firebase nunca pasan por validarCodigo() — licenciaActiva()
+// ya da true con lo que tenían guardado, así que jamás ven el paywall y
+// jamás se les escribe el uid en Firestore. Para ellos, la cuenta queda
+// visible en el panel admin como "Sin activar" aunque sí estén usando la
+// app, y nunca se respalda su historial en la nube.
+//
+// Esta función corre una sola vez al cargar la app: si detecta una
+// licencia local vigente cuyo código nunca fue registrado en Firestore
+// para este dispositivo, lo registra sola, sin pedir teléfono — porque
+// ya demostró ser el dueño legítimo al tener una licencia local vigente
+// para ese código específico (no es un desconocido activando por primera
+// vez, es un cliente conocido "sincronizando" tarde).
+async function intentarAutoRegistro() {
+  const lic = getLicencia();
+  if (!lic || !lic.code || !licenciaActiva()) return false;
+
+  try {
+    const ref = db.collection('cuentas').doc(lic.code);
+    const snap = await ref.get();
+    if (!snap.exists) return false;
+
+    const cuenta = snap.data();
+    const uids = cuenta.uids || [];
+
+    if (uids.includes(fbUid)) {
+      // Este dispositivo ya estaba autorizado (p.ej. tras un
+      // bloqueo/desbloqueo) — solo falta enlazar el código localmente.
+      fbCodigo = lic.code;
+      localStorage.setItem('cte_codigo', lic.code);
+      return true;
+    }
+
+    if (uids.length === 0) {
+      // Primer registro real en Firestore para este código.
+      await ref.update({ uids: [fbUid] });
+      fbCodigo = lic.code;
+      localStorage.setItem('cte_codigo', lic.code);
+      return true;
+    }
+
+    // La cuenta ya tiene dueño(s) registrados y este es un dispositivo
+    // distinto: agregarlo requeriría el teléfono (regla de 2do
+    // dispositivo), así que aquí no se hace nada automático.
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Semanas con datos reales (con al menos 1 hora ingresada)
 function semanasUsadas() {
   const d = JSON.parse(localStorage.getItem('cte_v4') || '{}');
@@ -860,6 +910,7 @@ const firebaseConfig = {
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
 
+
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -923,6 +974,13 @@ async function guardarSemanaFirestore() {
     await db.collection('cuentas').doc(fbCodigo)
              .collection('semanas').doc('s' + semana)
              .set(sd);
+    // Última actividad: escritura aparte y NO bloqueante — si falla (p.ej.
+    // porque la regla de 'ultimoAcceso' todavía no está publicada en
+    // Firestore), no debe tumbar el guardado real de la semana, que es
+    // lo crítico. El admin usa este campo solo para referencia.
+    db.collection('cuentas').doc(fbCodigo)
+      .update({ ultimoAcceso: Date.now() })
+      .catch(() => {});
     setSyncStatus('ok');
   } catch (e) {
     setSyncStatus('error');
@@ -1145,6 +1203,12 @@ async function initApp() {
   }
 
   fbCodigo = localStorage.getItem('cte_codigo') || null;
+
+  // Cliente con licencia local vieja (previa a esta versión), sin
+  // registro en Firestore: intenta registrarlo solo, sin pedirle nada.
+  if (!fbCodigo) {
+    await intentarAutoRegistro();
+  }
 
   // Siempre fusiona con la nube al arrancar, sin importar si ya habia
   // datos locales. restaurarDesdeNube() ahora hace merge semana por
