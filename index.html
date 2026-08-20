@@ -1074,8 +1074,18 @@ async function validarCodigo() {
 
     const cuenta = snap.data();
     const esPrimerCanje = (cuenta.uids || []).length === 0;
+    // Si este dispositivo (fbUid) ya estaba autorizado en la cuenta —caso
+    // típico tras un bloqueo/desbloqueo, donde se borró cte_lic pero el
+    // UID de Firebase Auth sigue siendo el mismo—, NO se debe escribir
+    // nada en Firestore: no es un dispositivo nuevo, es el mismo de
+    // siempre reconectando. Escribir aquí chocaría contra el límite de 2
+    // dispositivos si la cuenta ya tiene 2 uids registrados.
+    const yaAutorizado = (cuenta.uids || []).includes(fbUid);
 
-    if (esPrimerCanje) {
+    if (yaAutorizado) {
+      // No hay nada que actualizar en Firestore — solo se restablece la
+      // licencia local abajo, con los datos que ya existen en la cuenta.
+    } else if (esPrimerCanje) {
       await ref.update({
         uids: [fbUid],
         telHash:  hashSimple(tel),
