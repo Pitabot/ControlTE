@@ -755,6 +755,12 @@ async function verificarRevocacion() {
     const snap = await db.collection('cuentas').doc(fbCodigo).get();
     if (!snap.exists) return;
     const cuenta = snap.data();
+    if (cuenta.bloqueado === true) {
+      localStorage.removeItem('cte_lic');
+      alert('Tu acceso a ControlTE fue bloqueado. Contacta a soporte para más información.');
+      location.reload();
+      return;
+    }
     if (cuenta.expira && cuenta.expira <= Date.now()) {
       localStorage.removeItem('cte_lic');
       alert('Tu acceso a ControlTE venció. Contacta a soporte para renovar.');
