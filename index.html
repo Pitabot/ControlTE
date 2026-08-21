@@ -412,6 +412,9 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
       <input class="unlock-inp" id="unlock-inp" placeholder="Ingresa tu código" maxlength="12">
     </div>
     <div class="unlock-row" style="margin-top:6px">
+      <input class="unlock-inp" id="unlock-ficha" type="text" inputmode="numeric" placeholder="Tu número de ficha" maxlength="10">
+    </div>
+    <div class="unlock-row" style="margin-top:6px">
       <input class="unlock-inp" id="unlock-tel" type="tel" placeholder="Tu número de teléfono" maxlength="15">
       <button class="unlock-btn" onclick="validarCodigo()">Activar</button>
     </div>
@@ -910,7 +913,6 @@ const firebaseConfig = {
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
 
-
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -1101,9 +1103,11 @@ function setSyncStatus(estado) {
 async function validarCodigo() {
   const input = document.getElementById('unlock-inp');
   const telInput = document.getElementById('unlock-tel'); // agregar este campo al HTML del paywall
+  const fichaInput = document.getElementById('unlock-ficha');
   const msg = document.getElementById('unlock-msg');
   const raw = (input.value || '').trim().toUpperCase();
   const tel = (telInput ? telInput.value : '').trim();
+  const ficha = (fichaInput ? fichaInput.value : '').trim();
 
   if (!raw) { msg.innerText = "Escribe un código."; return; }
   if (!tel) { msg.innerText = "Escribe tu número de teléfono."; return; }
@@ -1144,10 +1148,41 @@ async function validarCodigo() {
       // No hay nada que actualizar en Firestore — solo se restablece la
       // licencia local abajo, con los datos que ya existen en la cuenta.
     } else if (esPrimerCanje) {
+      // Primer canje: en vez de dejar que el trabajador escriba su nombre
+      // libremente, se identifica por ficha contra el escalafón precargado
+      // (colección 'escalafon', ficha -> nombre, cargada una sola vez vía
+      // Admin SDK). Si la ficha existe ahí, se confirma una sola vez con
+      // Sí/No antes de ligarla a la cuenta — así el nombre y la ficha que
+      // quedan guardados son siempre los reales del escalafón, nunca un
+      // texto libre mal escrito.
+      if (!ficha) {
+        msg.className = "unlock-msg err";
+        msg.innerText = "Escribe tu número de ficha.";
+        return;
+      }
+
+      const escalafonSnap = await db.collection('escalafon').doc(ficha).get();
+      if (!escalafonSnap.exists) {
+        msg.className = "unlock-msg err";
+        msg.innerText = "Verifica tu ficha e intenta de nuevo.";
+        return;
+      }
+
+      const nombreEscalafon = escalafonSnap.data().nombre;
+      const confirmado = window.confirm(`¿Eres ${nombreEscalafon}?`);
+      if (!confirmado) {
+        fichaInput.value = '';
+        msg.className = "unlock-msg err";
+        msg.innerText = "Verifica tu ficha e intenta de nuevo.";
+        return;
+      }
+
       await ref.update({
         uids: [fbUid],
         telHash:  hashSimple(tel),
-        tel4Hash: hashSimple(tel.slice(-4))
+        tel4Hash: hashSimple(tel.slice(-4)),
+        ficha: ficha,
+        nombre: nombreEscalafon
       });
     } else {
       // Dispositivo nuevo: el campo tel4 del input se compara contra
