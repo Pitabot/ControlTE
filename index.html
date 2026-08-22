@@ -912,6 +912,7 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
+
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -1143,6 +1144,17 @@ async function validarCodigo() {
     // dispositivos si la cuenta ya tiene 2 uids registrados.
     const yaAutorizado = (cuenta.uids || []).includes(fbUid);
 
+    // FIX v10.2: el plan (semana/mes/año) debe empezar a contar desde que
+    // el trabajador realmente activa el código por primera vez, no desde
+    // que se generó/migró. Antes, un código sin usar por más tiempo del
+    // que dura su plan ya traía un 'expira' vencido desde antes de
+    // activarse, y el usuario era expulsado segundos después de entrar.
+    // Por eso 'expiraFinal' se recalcula SOLO en primer canje; en los
+    // demás casos (dispositivo ya conocido) se respeta el expira real que
+    // ya trae la cuenta, sin tocarlo.
+    let diasPlan = cuenta.plan === 'week' ? 7 : (cuenta.plan === 'month' ? 30 : 365);
+    let expiraFinal = cuenta.expira;
+
     if (yaAutorizado) {
       // No hay nada que actualizar en Firestore — solo se restablece la
       // licencia local abajo, con los datos que ya existen en la cuenta.
@@ -1176,12 +1188,15 @@ async function validarCodigo() {
         return;
       }
 
+      expiraFinal = Date.now() + diasPlan * 24 * 60 * 60 * 1000;
+
       await ref.update({
         uids: [fbUid],
         telHash:  hashSimple(tel),
         tel4Hash: hashSimple(tel.slice(-4)),
         ficha: ficha,
-        nombre: nombreEscalafon
+        nombre: nombreEscalafon,
+        expira: expiraFinal
       });
     } else {
       // Dispositivo nuevo: el campo tel4 del input se compara contra
@@ -1195,11 +1210,10 @@ async function validarCodigo() {
     fbCodigo = raw;
     localStorage.setItem('cte_codigo', raw);
 
-    let dias = cuenta.plan === 'week' ? 7 : (cuenta.plan === 'month' ? 30 : 365);
     setLicencia({
       code: raw,
       activado: Date.now(),
-      expira: cuenta.expira || (Date.now() + dias * 24 * 60 * 60 * 1000)
+      expira: expiraFinal || (Date.now() + diasPlan * 24 * 60 * 60 * 1000)
     });
 
     msg.className = "unlock-msg ok";
