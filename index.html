@@ -531,7 +531,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
           <th>Día</th><th>Horas</th><th>Tolerancia</th>
           <th>1130 T.E. medido</th><th>1140 # Comidas</th><th>Importe comidas</th>
           <th>1180 TE tolerancia</th>
-          <th style="color:#f5c842">1190 T.penado CCT</th>
+          <th style="color:var(--red)">1190 T.penado (recibo)</th>
           <th>Subtotal</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
@@ -671,7 +671,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 <div class="footer">
   <b>ControlTE</b> by PitaBot &nbsp;·&nbsp; PEMEX · STPRM · CCT 2025–2027 &nbsp;·&nbsp; Todos los derechos reservados
   <div style="margin-top:6px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">
-    controlTEv12_0-fixTiempoPenado.html
+    controlTEv12_3_1-fixTiempoPenado.html
   </div>
   <div style="margin-top:8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">
     ID de respaldo: <span id="uid-display">—</span>
@@ -1410,11 +1410,13 @@ function calcDia(d, horasPrevias, salSnap, arcSnap) {
 
   // --- 1190: TIEMPO PENADO ---
   // CCT Cláusula 193 (texto: "a partir de la 13ª hora... por cada semana"): acumulado SEMANAL desde hora 13.
-  // Fórmula empresa (recibo): NO acumula entre días — aplica por cada día que individualmente supere 16h.
+  // Fórmula empresa (recibo), según Piver: acumulado SEMANAL, DESPUÉS de 17 horas acumuladas
+  // (la hora 17 no cuenta, la hora 18 es la primera penada). Tasa sal÷8 únicamente.
   const horasAnteriores = horasPrevias || 0;
   const horasDesde13    = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
+  const horasDesde17    = Math.max(0, (horasAnteriores + h) - 17) - Math.max(0, horasAnteriores - 17);
   const penCCT    = Math.round((horasDesde13 * ((salTab / 8) + valorHoraExtra)) * 100) / 100;
-  const penRecibo = Math.round((Math.max(0, h - 16) * (salTab / 8))            * 100) / 100;
+  const penRecibo = Math.round((horasDesde17 * (salTab / 8))                    * 100) / 100;
 
   // --- PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
@@ -1855,8 +1857,9 @@ function calcDiaHistorialCot(d, horasAcum, salSnap, arcSnap, jornadaSnap) {
   }
   const icm = Math.round((com * TASA_COMIDA) * 100) / 100;
   const horasDesde13 = Math.max(0, (horasAcum + h) - 12) - Math.max(0, horasAcum - 12);
+  const horasDesde17 = Math.max(0, (horasAcum + h) - 17) - Math.max(0, horasAcum - 17);
   const penCCT    = Math.round((horasDesde13 * ((sal / 8) + valorHoraExtra)) * 100) / 100;
-  const penRecibo = Math.round((Math.max(0, h - 16) * (sal / 8)) * 100) / 100;
+  const penRecibo = Math.round((horasDesde17 * (sal / 8)) * 100) / 100;
   return { h, t, te, com, icm, minTol, tet, penCCT, penRecibo };
 }
 
