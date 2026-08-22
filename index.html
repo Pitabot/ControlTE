@@ -500,6 +500,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
         <select id="sel-jornada" onchange="cambiarJornada();"
           style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);cursor:pointer;">
           <option value="00">Jornada 00 — L-V</option>
+          <option value="04">Jornada 04 — Turno discontinuo</option>
           <option value="07">Jornada 07 — 6 días</option>
         </select>
       </div>
@@ -593,6 +594,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
           <label>Jornada</label>
           <select id="inp-jornada">
             <option value="00">Jornada 00 — Lunes a Viernes</option>
+            <option value="04">Jornada 04 — Turno discontinuo</option>
             <option value="07">Jornada 07 — 6 días</option>
           </select>
         </div>
@@ -1346,13 +1348,6 @@ function contactarWA() {
   window.open(`https://wa.me/${WA_NUM}?text=Hola, soy ${nombre}. Quiero activar ControlTE.`, '_blank');
 }
 
-function showTab(id) {
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('tab-' + id).classList.add('active');
-  if(event) event.currentTarget.classList.add('active');
-}
-
 window.onload = () => { initApp(); };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1377,8 +1372,8 @@ function getComidas(horas, tipo) {
     return 0;
   }
 
-  if (j === '07') {
-    // Jornada 07: 2h=1 comida, 8h+=2 comidas
+  if (j === '07' || j === '04') {
+    // Jornada 07 y 04: 2h=1 comida, 8h+=2 comidas (04 se trata igual que 07)
     if (horas >= 8) return 2;
     if (horas >= 2) return 1;
     return 0;
@@ -1654,13 +1649,13 @@ function renderRef() {
 
   // Comidas según jornada activa
   const TASA_COMIDA = 187.75;
-  if (j === '07') {
+  if (j === '07' || j === '04') {
     document.getElementById('ref-com').innerHTML = `
-      <div class="rbox-hd" style="background:#fff3d0;color:var(--gold);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 07 — Día normal</div>
+      <div class="rbox-hd" style="background:#fff3d0;color:var(--gold);font-size:10px;padding:6px 14px;border-bottom:1px solid var(--rule);">Jornada 04/07 — Día normal</div>
       <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
       <div class="rrow"><span>2 a 7 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>8 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
-      <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 07 — Festivo / Descanso</div>
+      <div class="rbox-hd" style="background:#f0e8ff;color:var(--purple);font-size:10px;padding:6px 14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);">Jornada 04/07 — Festivo / Descanso</div>
       <div class="rrow na"><span>Menos de 2 hrs</span><span>Sin comida</span></div>
       <div class="rrow"><span>2 a 11 hrs</span><span>1 comida ($${(1*TASA_COMIDA).toFixed(2)})</span></div>
       <div class="rrow"><span>12 hrs o más</span><span>2 comidas ($${(2*TASA_COMIDA).toFixed(2)})</span></div>
@@ -1837,7 +1832,7 @@ function calcDiaHistorialCot(d, horasAcum, salSnap, arcSnap, jornadaSnap) {
   let com = 0;
   if (t === 'festivo' || t === 'descanso') {
     if (h >= 12) com = 2; else if (h >= 2) com = 1;
-  } else if (jornadaSnap === '07') {
+  } else if (jornadaSnap === '07' || jornadaSnap === '04') {
     if (h >= 8) com = 2; else if (h >= 2) com = 1;
   } else {
     if (h >= 5) com = 2; else if (h >= 2) com = 1;
