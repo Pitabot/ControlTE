@@ -912,7 +912,6 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
-
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -1351,11 +1350,13 @@ function calcDia(d, horasPrevias, salSnap, arcSnap) {
   const minTol = getTolMin(h, t);
   const tet = Math.round(((minTol / 60) * valorHoraExtra) * 100) / 100;
 
-  // --- 1190: TIEMPO PENADO (desde la hora 13 acumulada en la semana) ---
+  // --- 1190: TIEMPO PENADO ---
+  // CCT Cláusula 193: activa desde la hora 13 acumulada. Fórmula empresa (recibo): activa desde la hora 17.
   const horasAnteriores = horasPrevias || 0;
   const horasDesde13    = Math.max(0, (horasAnteriores + h) - 12) - Math.max(0, horasAnteriores - 12);
+  const horasDesde17    = Math.max(0, (horasAnteriores + h) - 16) - Math.max(0, horasAnteriores - 16);
   const penCCT    = Math.round((horasDesde13 * ((salTab / 8) + valorHoraExtra)) * 100) / 100;
-  const penRecibo = Math.round((horasDesde13 * (salTab / 8))                    * 100) / 100;
+  const penRecibo = Math.round((horasDesde17 * (salTab / 8))                    * 100) / 100;
 
   // --- PRIMA DOMINICAL (35%) ---
   let primaDom = 0;
@@ -1783,8 +1784,9 @@ function calcDiaHistorialCot(d, horasAcum, salSnap, arcSnap, jornadaSnap) {
   }
   const icm = Math.round((com * TASA_COMIDA) * 100) / 100;
   const horasDesde13 = Math.max(0, (horasAcum + h) - 12) - Math.max(0, horasAcum - 12);
+  const horasDesde17 = Math.max(0, (horasAcum + h) - 16) - Math.max(0, horasAcum - 16);
   const penCCT    = Math.round((horasDesde13 * ((sal / 8) + valorHoraExtra)) * 100) / 100;
-  const penRecibo = Math.round((horasDesde13 * (sal / 8)) * 100) / 100;
+  const penRecibo = Math.round((horasDesde17 * (sal / 8)) * 100) / 100;
   return { h, t, te, com, icm, minTol, tet, penCCT, penRecibo };
 }
 
