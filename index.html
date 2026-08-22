@@ -903,7 +903,7 @@ function semData(s) {
 // FIREBASE — reemplaza JSONBin por completo.
 // firebaseConfig NO es secreto (identifica el proyecto, no da permisos).
 // La seguridad real vive en firestore.rules, ya desplegado en controlte-prod.
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -1035,7 +1035,17 @@ async function restaurarDesdeNube() {
     jornada = perfil.jornada || jornada;
 
     const semanasSnap = await cuentaRef.collection('semanas').get();
-    if (semanasSnap.empty) return false;
+    // FIX v11.1: antes, si la nube no tenía NINGUNA semana todavía (típico
+    // de una cuenta recién re-enlazada por asegurarUidRegistrado(), cuyas
+    // escrituras estuvieron bloqueadas por las reglas hasta ahora), la
+    // función se salía aquí mismo con 'false' — antes de llegar al bloque
+    // de abajo que sube las semanas locales a la nube. Resultado: solo la
+    // semana que la persona tuviera abierta en ese momento terminaba
+    // subiendo (vía el guardado automático normal), y todo su historial
+    // de semanas anteriores se quedaba atrapado únicamente en ese
+    // dispositivo. Quitamos esa salida temprana: aunque la nube esté
+    // vacía, se sigue de largo hasta el bloque de subida, que ya sabe
+    // manejar "esta semana no existe en la nube todavía" perfectamente.
 
     // FUSIÓN, no reemplazo. Varios dispositivos pueden tener capturas que
     // el otro no tiene todavía (ej.: laptop desactualizada + celular con
@@ -1229,6 +1239,38 @@ async function validarCodigo() {
   }
 }
 
+// FIX v11.0: clientes viejos cuyo navegador ya tenía 'cte_codigo' guardado
+// en localStorage desde antes de que la app usara Firestore nunca pasan
+// por intentarAutoRegistro() (esa función solo corre si NO hay código
+// local) — su cuenta se queda con uids:[] para siempre. La app les sigue
+// funcionando porque su licencia local (cte_lic) sigue vigente, pero
+// nunca suben nada a la nube, nunca actualizan ultimoAcceso, y nunca
+// aparecen con actividad en el panel admin, aunque sí estén usando la app
+// a diario. Esta función corre SIEMPRE que ya hay un código local, y
+// enlaza el dispositivo si Firestore todavía no lo tiene registrado.
+async function asegurarUidRegistrado(codigo) {
+  if (!fbUid || !codigo) return;
+  try {
+    const ref = db.collection('cuentas').doc(codigo);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const uids = snap.data().uids || [];
+    if (uids.includes(fbUid)) return; // ya registrado, nada que hacer
+
+    if (uids.length === 0) {
+      // Nadie ha reclamado esta cuenta en Firestore todavía: este
+      // dispositivo, al tener ya una licencia local vigente para este
+      // código, se registra solo — mismo criterio que intentarAutoRegistro().
+      await ref.update({ uids: [fbUid] });
+    }
+    // Si uids.length > 0 y este uid no está ahí, es un dispositivo
+    // distinto al ya registrado — no se toca nada aquí (eso requiere el
+    // flujo de "dispositivo nuevo" con teléfono, vía validarCodigo()).
+  } catch (e) {
+    // Sin conexión u otro fallo: se reintenta solo en la próxima carga.
+  }
+}
+
 async function initApp() {
   const splash = document.getElementById('splash');
 
@@ -1256,6 +1298,10 @@ async function initApp() {
   // registro en Firestore: intenta registrarlo solo, sin pedirle nada.
   if (!fbCodigo) {
     await intentarAutoRegistro();
+  } else {
+    // FIX v11.0: aunque ya haya código local guardado, confirma que este
+    // dispositivo esté realmente enlazado en Firestore (ver asegurarUidRegistrado).
+    await asegurarUidRegistrado(fbCodigo);
   }
 
   // Siempre fusiona con la nube al arrancar, sin importar si ya habia
