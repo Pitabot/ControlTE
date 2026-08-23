@@ -1008,13 +1008,16 @@ async function guardarSemanaFirestore() {
 
 // AUTOGUARDADO PERIÓDICO — igual que el autoguardado de Excel: sin importar
 // si el guardado disparado por edición falló (mala señal, sesión que aún
-// no cargó, etc.), este intervalo reintenta solo cada 15s mientras la
+// no cargó, etc.), este intervalo reintenta solo cada 5s mientras la
 // pestaña esté abierta. guardarSemanaFirestore() ya es segura de repetir
 // (usa .set(), no crea duplicados), así que no hay riesgo en llamarla
 // de mas — si ya estaba guardado, simplemente vuelve a escribir lo mismo.
+// FIX v12.3.3: bajado de 15s a 5s — algunos trabajadores abren la app,
+// la ven un momento y la cierran antes de los 15s, sin dejar tiempo a
+// que se dispare ni el guardado ni el registro de error si algo falla.
 setInterval(() => {
   if (fbCodigo && fbUid) guardarSemanaFirestore();
-}, 15000);
+}, 5000);
 
 // Se dispara si el usuario minimiza/cierra antes de que pase el debounce
 document.addEventListener('visibilitychange', () => {
