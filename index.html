@@ -918,6 +918,7 @@ const firebaseConfig = {
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
 
+
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -990,6 +991,17 @@ async function guardarSemanaFirestore() {
       .catch(() => {});
     setSyncStatus('ok');
   } catch (e) {
+    // FIX v12.3.2: antes este error se perdía por completo — ni se veía
+    // en consola ni quedaba registro en ningún lado, así que cuando
+    // alguien reportaba "no se guardó mi semana" era imposible saber por
+    // qué sin acceso físico a su celular. Ahora se manda a consola Y se
+    // guarda en la propia cuenta (campo 'ultimoError', no bloqueante,
+    // mismo patrón que 'ultimoAcceso') para poder revisarlo después
+    // directo en Firestore, sin molestar al trabajador.
+    console.error('guardarSemanaFirestore falló:', e.code || '', e.message || e);
+    db.collection('cuentas').doc(fbCodigo)
+      .update({ ultimoError: `${new Date().toISOString()} | ${e.code || ''} ${e.message || e}` })
+      .catch(() => {});
     setSyncStatus('error');
   }
 }
