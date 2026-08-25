@@ -922,6 +922,7 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
+
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -1528,7 +1529,7 @@ function renderSelectorOrden(d, i, categoria) {
   }).join('');
 
   const funcion = categoria === 'INSALUBRE' ? 'setOrdenInsalubre' : 'setOrden';
-  const placeholder = categoria === 'INSALUBRE' ? 'Orden de trabajo (insalubre)…' : 'Selecciona orden de trabajo…';
+  const placeholder = categoria === 'INSALUBRE' ? 'Insalubre…' : 'Tiempo extra…';
 
   const boton = vacio ? '' : `<button type="button" class="orden-borrar" title="Borrar selección" onclick="borrarOrden(${i}, '${categoria}')">×</button>`;
 
