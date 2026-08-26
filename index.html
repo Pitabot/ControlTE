@@ -1529,7 +1529,7 @@ function renderSelectorOrden(d, i, categoria) {
   }).join('');
 
   const funcion = categoria === 'INSALUBRE' ? 'setOrdenInsalubre' : 'setOrden';
-  const placeholder = categoria === 'INSALUBRE' ? 'Insalubre…' : 'Tiempo extra…';
+  const placeholder = categoria === 'INSALUBRE' ? 'Orden de trabajo (insalubre)…' : 'Selecciona orden de trabajo…';
 
   const boton = vacio ? '' : `<button type="button" class="orden-borrar" title="Borrar selección" onclick="borrarOrden(${i}, '${categoria}')">×</button>`;
 
