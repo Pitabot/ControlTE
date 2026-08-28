@@ -676,7 +676,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 <div class="footer">
   <b>ControlTE</b> by PitaBot &nbsp;·&nbsp; PEMEX · STPRM · CCT 2025–2027 &nbsp;·&nbsp; Todos los derechos reservados
   <div style="margin-top:6px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">
-    controlTEv14_2.html
+    controlTEv15_0-verificacionForzada.html
   </div>
   <div style="margin-top:8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">
     ID de respaldo: <span id="uid-display">—</span>
@@ -1224,13 +1224,16 @@ async function validarCodigo() {
 
       expiraFinal = Date.now() + diasPlan * 24 * 60 * 60 * 1000;
 
+      // v15.0: si esta cuenta había sido marcada para reverificación
+      // forzada, se apaga aquí — ya se completó con éxito.
       await ref.update({
         uids: [fbUid],
         telHash:  hashSimple(tel),
         tel4Hash: hashSimple(tel.slice(-4)),
         ficha: ficha,
         nombre: nombreEscalafon,
-        expira: expiraFinal
+        expira: expiraFinal,
+        requiereVerificacion: false
       });
     } else {
       // Dispositivo nuevo: el campo tel4 del input se compara contra
@@ -1325,9 +1328,35 @@ async function initApp() {
   // "Otro" — no debe tumbar el arranque de la app.
   cargarCatalogoOrdenes().catch(() => {});
 
-  // Cliente con licencia local vieja (previa a esta versión), sin
-  // registro en Firestore: intenta registrarlo solo, sin pedirle nada.
-  if (!fbCodigo) {
+  // v15.0: REVERIFICACIÓN FORZADA. Cuando asegurarUidRegistrado() no logra
+  // enlazar un dispositivo (por reglas, por conexión, por lo que sea) y el
+  // caso queda atorado, el admin puede marcar la cuenta con
+  // requiereVerificacion:true en Firestore. La próxima vez que ese
+  // trabajador abra la app, se le borra la sesión local (código y
+  // licencia) y se le manda directo a la pantalla de código — donde,
+  // como uids sigue vacío, validarCodigo() lo trata como "primer canje":
+  // pide su ficha y confirma su nombre contra el escalafón antes de
+  // enlazar el uid. No requiere que el trabajador sepa qué pasó, solo que
+  // vuelva a escribir su código y su ficha.
+  let forzarReingreso = false;
+  if (fbCodigo) {
+    try {
+      const snapForzado = await db.collection('cuentas').doc(fbCodigo).get();
+      if (snapForzado.exists && snapForzado.data().requiereVerificacion === true) {
+        forzarReingreso = true;
+      }
+    } catch (e) {
+      // Sin conexión: no se fuerza nada, se sigue el flujo normal abajo.
+    }
+  }
+
+  if (forzarReingreso) {
+    localStorage.removeItem('cte_codigo');
+    localStorage.removeItem('cte_lic');
+    fbCodigo = null;
+  } else if (!fbCodigo) {
+    // Cliente con licencia local vieja (previa a esta versión), sin
+    // registro en Firestore: intenta registrarlo solo, sin pedirle nada.
     await intentarAutoRegistro();
   } else {
     // FIX v11.0: aunque ya haya código local guardado, confirma que este
