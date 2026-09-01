@@ -745,7 +745,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv16_1-selectorRestaurado.html';
+const VERSION_ARCHIVO = 'controlTEv16_2-fixAutoAsignacion.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -925,7 +925,6 @@ function semData(s) {
 // FIREBASE — reemplaza JSONBin por completo.
 // firebaseConfig NO es secreto (identifica el proyecto, no da permisos).
 // La seguridad real vive en firestore.rules, ya desplegado en controlte-prod.
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -1597,18 +1596,19 @@ function render() {
   actualizarEstado();
   const sd = semData(semana);
 
-  // v16.0: auto-asigna la orden del día si hay EXACTAMENTE una que
-  // coincida con la fecha, y el día todavía no tiene ninguna guardada.
-  // Si ya tenía algo (de antes, o porque el admin la quitó y puso otra
-  // distinta), no se pisa aquí — eso se actualiza normal la próxima vez
-  // que el día se quede vacío.
+  // v16.2 FIX: el auto-llenado ahora solo aplica si el día realmente
+  // corresponde a esa categoría (TE: horas>0 capturadas; INSALUBRE: día
+  // normal) — antes se asignaba a CUALQUIER día que coincidiera en
+  // fecha, aunque el trabajador no hubiera hecho tiempo extra ese día.
+  // También respeta si el trabajador ya la había borrado a propósito
+  // (bandera *Rechazada) para que no reaparezca sola.
   let huboAutoAsignacion = false;
   sd.dias.forEach(d => {
-    if (!d.ordenTrabajo) {
+    if (!d.ordenTrabajo && !d.ordenTrabajoRechazada && d.horas > 0) {
       const m = ordenesParaDia(d.fecha, 'TE');
       if (m.length === 1) { d.ordenTrabajo = m[0].id; huboAutoAsignacion = true; }
     }
-    if (!d.ordenInsalubre) {
+    if (!d.ordenInsalubre && !d.ordenInsalubreRechazada && d.tipo === 'normal') {
       const m = ordenesParaDia(d.fecha, 'INSALUBRE');
       if (m.length === 1) { d.ordenInsalubre = m[0].id; huboAutoAsignacion = true; }
     }
@@ -1855,10 +1855,17 @@ function setOrdenInsalubre(i, valor) {
 
 // v14.1: borra la orden seleccionada (T.E. o insalubre) de un día, por si
 // el trabajador se equivocó de día o de tipo al capturar.
+// v16.2 FIX: ahora también marca una bandera de "rechazada" para que el
+// auto-llenado no la vuelva a poner sola en el siguiente render.
 function borrarOrden(i, categoria) {
   const d = semData(semana).dias[i];
-  if (categoria === 'INSALUBRE') d.ordenInsalubre = '';
-  else d.ordenTrabajo = '';
+  if (categoria === 'INSALUBRE') {
+    d.ordenInsalubre = '';
+    d.ordenInsalubreRechazada = true;
+  } else {
+    d.ordenTrabajo = '';
+    d.ordenTrabajoRechazada = true;
+  }
   guardar();
   render();
 }
