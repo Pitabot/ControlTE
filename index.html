@@ -832,7 +832,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv17_3-planFree.html';
+const VERSION_ARCHIVO = 'controlTEv17_4-planFree.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1020,7 +1020,6 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
-
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -1119,22 +1118,24 @@ function guardarSemanaFirestoreDebounced() {
 async function guardarAhoraDirecto() {
   const btn = document.getElementById('btn-guardar-ahora');
   const st  = document.getElementById('guardar-ahora-status');
-  const textoOriginal = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Guardando…';
-  st.className = 'guardar-ahora-status';
-  st.style.display = 'none';
-
-  if (!fbCodigo || !fbUid) {
-    st.className = 'guardar-ahora-status err';
-    st.textContent = '❌ No se guardó: no hay sesión activa en este dispositivo (código o UID vacío). Muestra esto a tu administrador.';
-    btn.disabled = false;
-    btn.textContent = textoOriginal;
-    return;
-  }
-
   try {
-    congelarMontos(semana);
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    st.className = 'guardar-ahora-status';
+    st.style.display = 'none';
+
+    if (!fbCodigo || !fbUid) {
+      st.className = 'guardar-ahora-status err';
+      st.textContent = '❌ No se guardó: no hay sesión activa en este dispositivo (código o UID vacío). Muestra esto a tu administrador.';
+      return;
+    }
+
+    // v17.4: si congelarMontos() truena (ej. cuenta free sin nivel/salario
+    // cargado), antes se perdía TODO el guardado en silencio, porque el
+    // error salía antes de llegar al Firestore o a mostrar la cajita.
+    // Ahora se aísla: si el cálculo falla, las horas se guardan igual.
+    try { congelarMontos(semana); } catch (eCalc) { /* se guarda sin snapshot de cálculo */ }
+
     const sd = semData(semana);
     await db.collection('cuentas').doc(fbCodigo)
              .collection('semanas').doc('s' + semana)
@@ -1144,11 +1145,11 @@ async function guardarAhoraDirecto() {
     st.textContent = `✅ Guardado — ${hora}`;
   } catch (e) {
     st.className = 'guardar-ahora-status err';
-    st.textContent = `❌ No se guardó: ${e.code || ''} ${e.message || e}`;
+    st.textContent = `❌ No se guardó: ${(e && (e.code || e.message)) || e}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Guardar';
   }
-
-  btn.disabled = false;
-  btn.textContent = textoOriginal;
 }
 
 async function guardarSemanaFirestore() {
