@@ -226,7 +226,8 @@ body { font-family: 'DM Sans', sans-serif; background: var(--paper); color: var(
 .orden-fila { display: flex; align-items: center; gap: 4px; }
 .orden-fila .orden-sel { margin-top: 6px; flex: 1; }
 .orden-borrar { margin-top: 6px; width: 22px; height: 26px; border: 1px solid var(--rule); border-radius: 6px; background: white; color: var(--red, #B52B27); font-size: 14px; line-height: 1; cursor: pointer; }
-.orden-fija { margin-top: 6px; font-size: 11px; padding: 5px 8px; border-radius: 6px; background: #eef4ff; border: 1px solid var(--blue2); color: var(--blue); }
+.orden-fija { margin-top: 6px; font-size: 11px; padding: 5px 8px; border-radius: 6px; background: #eef4ff; border: 1px solid var(--blue2); color: var(--blue); display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.orden-fija .orden-borrar { margin-top: 0; flex-shrink: 0; }
 .orden-aviso { margin-top: 6px; font-size: 10px; padding: 5px 8px; border-radius: 6px; background: #fff3f2; border: 1px dashed var(--red, #B52B27); color: var(--red, #B52B27); }
 .type-row { display: flex; gap: 3px; margin-top: 8px; }
 .type-btn { flex: 1; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 4px 1px; border-radius: 4px; border: 1px solid var(--rule); background: transparent; color: var(--muted); cursor: pointer; transition: all .12s; font-family: 'DM Sans', sans-serif; }
@@ -832,7 +833,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv17_5-planFree.html';
+const VERSION_ARCHIVO = 'controlTEv18_1-multiSeleccionable.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1745,32 +1746,46 @@ function ordenesParaDia(fechaISO, categoria) {
   );
 }
 
+// v18.1 FIX: cuando hay 2+ coincidencias para el mismo día, ya NO se
+// asume que es un error del admin — puede ser intencional (el
+// trabajador hizo más de una orden distinta ese día). Ahora se muestran
+// como opciones seleccionables (dropdown), pero limitadas SOLO a las
+// que coinciden con esa fecha — nunca el catálogo completo.
 function renderSelectorOrden(d, i, categoria) {
-  const val = categoria === 'INSALUBRE' ? (d.ordenInsalubre || '') : (d.ordenTrabajo || '');
-  const vacio = !val;
-  const catalogoFiltrado = catalogoOrdenes.filter(o =>
-    categoria === 'INSALUBRE' ? o.tipo === 'INSALUBRE' : o.tipo !== 'INSALUBRE'
-  );
-  const opciones = catalogoFiltrado.map(o => {
-    const etiqueta = `${o.orden} — ${(o.descripcion || '').slice(0, 30)}`;
-    const sel = val === o.id ? 'selected' : '';
-    return `<option value="${o.id}" ${sel}>${etiqueta}</option>`;
-  }).join('');
-
+  const campo = categoria === 'INSALUBRE' ? 'ordenInsalubre' : 'ordenTrabajo';
+  const val = d[campo] || '';
   const funcion = categoria === 'INSALUBRE' ? 'setOrdenInsalubre' : 'setOrden';
-  const placeholder = categoria === 'INSALUBRE' ? 'Orden de INSALUBRE — selecciona…' : 'Orden de TIEMPO EXTRA — selecciona…';
 
-  const boton = vacio ? '' : `<button type="button" class="orden-borrar" title="Borrar selección" onclick="borrarOrden(${i}, '${categoria}')">×</button>`;
+  const coincidenDia = ordenesParaDia(d.fecha, categoria);
 
-  return `
-    <div class="orden-fila">
-      <select class="orden-sel ${vacio ? 'orden-req' : ''}" onchange="${funcion}(${i}, this.value)">
-        <option value="" ${vacio ? 'selected' : ''} disabled>${placeholder}</option>
-        ${opciones}
-        <option value="__OTRO__" ${val === 'OTRO' ? 'selected' : ''}>Otro…</option>
-      </select>
-      ${boton}
+  if (coincidenDia.length > 1) {
+    const opciones = coincidenDia.map(o => {
+      const etiqueta = `${o.orden} — ${(o.descripcion || '').slice(0, 30)}`;
+      const sel = val === o.id ? 'selected' : '';
+      return `<option value="${o.id}" ${sel}>${etiqueta}</option>`;
+    }).join('');
+    const boton = val ? `<button type="button" class="orden-borrar" title="Quitar" onclick="borrarOrden(${i}, '${categoria}')">×</button>` : '';
+    return `
+      <div class="orden-fila">
+        <select class="orden-sel ${val ? '' : 'orden-req'}" onchange="${funcion}(${i}, this.value)">
+          <option value="" ${val ? '' : 'selected'} disabled>Hay ${coincidenDia.length} órdenes este día, elige cuál…</option>
+          ${opciones}
+        </select>
+        ${boton}
+      </div>`;
+  }
+
+  if (val) {
+    const o = catalogoOrdenes.find(x => x.id === val);
+    const etiqueta = o ? `${o.orden} — ${(o.descripcion || '').slice(0, 34)}` : 'Orden asignada';
+    return `<div class="orden-fija">${etiqueta}
+      <button type="button" class="orden-borrar" title="Quitar" onclick="borrarOrden(${i}, '${categoria}')">×</button>
     </div>`;
+  }
+
+  // Sin ninguna coincidencia: casilla vacía, sin selector de ningún tipo.
+  const etiquetaCat = categoria === 'INSALUBRE' ? 'insalubre' : 'tiempo extra';
+  return `<div class="orden-aviso">Sin orden de ${etiquetaCat} asignada este día</div>`;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
