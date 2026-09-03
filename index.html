@@ -406,9 +406,9 @@ body.plan-free #scards { display: none !important; }
    cualquiera con problemas de sync, donde antes una falla silenciosa
    no dejaba ningún rastro visible. */
 .btn-guardar-ahora {
-  display: block; width: 100%; margin: 14px 0 6px;
-  padding: 16px; font-size: 16px; font-weight: 700;
-  background: var(--blue); color: #fff; border: none; border-radius: 10px;
+  display: inline-block; width: auto; margin: 10px 0 6px;
+  padding: 9px 18px; font-size: 13px; font-weight: 700;
+  background: var(--red, #B52B27); color: #fff; border: none; border-radius: 8px;
   cursor: pointer; letter-spacing: .3px;
 }
 .btn-guardar-ahora:active { opacity: .85; }
@@ -587,7 +587,7 @@ body.plan-free #scards { display: none !important; }
     </div>
 
     <button class="btn-guardar-ahora" id="btn-guardar-ahora" onclick="guardarAhoraDirecto()">
-      💾 Guardar ahora en Firebase
+      💾 Guardar
     </button>
     <div class="guardar-ahora-status" id="guardar-ahora-status"></div>
 
@@ -832,7 +832,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv17_2-planFree.html';
+const VERSION_ARCHIVO = 'controlTEv17_3-planFree.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1007,6 +1007,11 @@ function semData(s) {
   }
   return datos[k];
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FIREBASE — reemplaza JSONBin por completo.
+// firebaseConfig NO es secreto (identifica el proyecto, no da permisos).
+// La seguridad real vive en firestore.rules, ya desplegado en controlte-pro
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -1136,7 +1141,7 @@ async function guardarAhoraDirecto() {
              .set(sd);
     const hora = new Date().toLocaleTimeString('es-MX');
     st.className = 'guardar-ahora-status ok';
-    st.textContent = `✅ Guardado en Firebase — ${hora}`;
+    st.textContent = `✅ Guardado — ${hora}`;
   } catch (e) {
     st.className = 'guardar-ahora-status err';
     st.textContent = `❌ No se guardó: ${e.code || ''} ${e.message || e}`;
