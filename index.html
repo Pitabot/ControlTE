@@ -501,7 +501,12 @@ body.plan-free #scards { display: none !important; }
   <div class="header-fields">
     <div class="hfield">
       <span class="hfield-lbl">Trabajador</span>
-      <input id="inp-nombre" value=" " oninput="guardar()">
+      <!-- v20.0: solo lectura — el nombre ya se confirmó una vez contra el
+           escalafón en el auto-registro (ver nombreEscalafon); ya no tiene
+           caso volver a pedirlo ni permitir que se edite desde aquí. Esto
+           también cierra el bug donde este campo aparentaba guardarse pero
+           nunca llegaba al payload de guardar()/Firestore. -->
+      <input id="inp-nombre" value=" " readonly>
     </div>
     <div class="hfield">
       <span class="hfield-lbl">Nivel</span>
@@ -554,7 +559,7 @@ body.plan-free #scards { display: none !important; }
     <div style="display:flex;gap:12px;align-items:center;background:var(--white);border:1.5px solid var(--rule);border-radius:10px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:140px;">
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);">Trabajador</span>
-        <input id="inp-nombre2" style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);" value="" placeholder="Nombre del trabajador" oninput="document.getElementById('inp-nombre').value=this.value;guardar()">
+        <input id="inp-nombre2" style="flex:1;background:var(--paper);border:1.5px solid var(--rule);border-radius:6px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;color:var(--ink);" value="" placeholder="Nombre del trabajador" readonly>
       </div>
       <div class="solo-pago" style="display:flex;align-items:center;gap:8px;flex:2;min-width:200px;">
         <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--mid);white-space:nowrap;">Nivel</span>
@@ -833,7 +838,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv18_2-encabezadoClaro.html';
+const VERSION_ARCHIVO = 'controlTEv20_0-grupos.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1405,10 +1410,20 @@ async function validarCodigo() {
 
       // v15.0: si esta cuenta había sido marcada para reverificación
       // forzada, se apaga aquí — ya se completó con éxito.
+      // v19.0: además de telHash/tel4Hash (hash, no reversible), se
+      // guarda 'cel' — el mismo número que el trabajador ya estaba
+      // tecleando aquí para el hash, ahora TAMBIÉN en texto plano —
+      // para que el Panel Admin pueda mandarle WhatsApp directo (wa.me)
+      // sin depender de copiar/pegar. Es una decisión de privacidad
+      // explícita del dueño de ControlTE (Piver): antes solo se
+      // guardaba hasheado a propósito; se agrega el texto plano solo
+      // porque él lo pidió así, sabiendo que cualquiera con acceso de
+      // superadmin a Firestore podrá verlo.
       await ref.update({
         uids: [fbUid],
         telHash:  hashSimple(tel),
         tel4Hash: hashSimple(tel.slice(-4)),
+        cel: tel.replace(/\D/g, ''),
         ficha: ficha,
         nombre: nombreEscalafon,
         expira: expiraFinal,
@@ -2498,7 +2513,7 @@ document.getElementById('inp-fecha').value = new Date().toISOString().slice(0, 1
 })();
 
 </script>
-  
+
 <!-- BOTÓN FLOTANTE SOPORTE TÉCNICO -->
 <a class="wa-float" href="https://wa.me/529616868835" target="_blank">
   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.118 1.528 5.855L0 24l6.335-1.524A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.667-.504-5.198-1.385l-.373-.221-3.861.929.972-3.762-.243-.387A9.953 9.953 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
