@@ -838,7 +838,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv20_0-grupos.html';
+const VERSION_ARCHIVO = 'controlTEv20_1-grupos.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -971,6 +971,12 @@ let nivel   = parseInt(localStorage.getItem('cte_nivel')   || 21);
 let semana  = parseInt(localStorage.getItem('cte_semana')  || SEM_BASE);
 let datos   = JSON.parse(localStorage.getItem('cte_v4')    || '{}');
 let jornada = localStorage.getItem('cte_jornada') || '00';
+// FIX v20.1: cache local del nombre, mismo patrón que nivel/jornada arriba.
+// Se pinta de inmediato en el INIT (abajo) para que el campo no se vea
+// vacío mientras Firestore responde o si se abre sin conexión, y
+// restaurarDesdeNube() lo actualiza con el valor real de la cuenta en
+// cuanto la nube contesta.
+let nombreCache = localStorage.getItem('cte_nombre') || '';
 
 // Hora extra ocasional (1130) = (sal + 60%sal + arc) ÷ 8 × 2  (Cláusula 193)
 const horaTE       = () => ((TAB[nivel] + TAB[nivel] * 0.60 + ARC[nivel]) / 8) * 2;
@@ -1241,6 +1247,18 @@ async function restaurarDesdeNube() {
     const perfil = cuentaSnap.data();
     nivel   = perfil.nivel   || nivel;
     jornada = perfil.jornada || jornada;
+    // FIX v20.1: el nombre (perfil.nombre) nunca se restauraba desde la
+    // nube — solo nivel y jornada. Antes de v20.0 no importaba porque
+    // inp-nombre era editable y el trabajador lo tecleaba a mano cada vez;
+    // al volverlo readonly ese v20.0 dejó de tener forma de llenarse, y
+    // el campo quedaba vacío para siempre. Se pinta aquí igual que nivel
+    // y jornada, y se cachea en localStorage para que sobreviva sin
+    // conexión (ver nombreCache arriba).
+    nombreCache = perfil.nombre || nombreCache;
+    const inpNombre  = document.getElementById('inp-nombre');
+    const inpNombre2 = document.getElementById('inp-nombre2');
+    if (inpNombre)  inpNombre.value  = nombreCache;
+    if (inpNombre2) inpNombre2.value = nombreCache;
 
     const semanasSnap = await cuentaRef.collection('semanas').get();
     // FIX v11.1: antes, si la nube no tenía NINGUNA semana todavía (típico
@@ -1276,6 +1294,7 @@ async function restaurarDesdeNube() {
     localStorage.setItem('cte_v4',      JSON.stringify(datos));
     localStorage.setItem('cte_nivel',   nivel);
     localStorage.setItem('cte_jornada', jornada);
+    localStorage.setItem('cte_nombre',  nombreCache);
 
     // Si el local tenia semanas mas nuevas que la nube (ej.: se acaba de
     // capturar algo con mala señal y no habia subido aun), las subimos
@@ -2172,6 +2191,14 @@ document.getElementById('sal-visible').textContent = `$${TAB[nivel].toFixed(2)}`
 
 // Restaurar jornada guardada
 document.getElementById('sel-jornada').value = jornada;
+
+// FIX v20.1: pintar el nombre cacheado localmente. Desde v20.0
+// inp-nombre/inp-nombre2 son de solo lectura (ya no se piden a mano),
+// pero nada los llenaba — se quedaban vacíos para siempre. Este es el
+// primer pintado (desde localStorage, instantáneo); restaurarDesdeNube()
+// lo corrige más abajo con el valor real de la cuenta en cuanto llega.
+document.getElementById('inp-nombre').value  = nombreCache;
+document.getElementById('inp-nombre2').value = nombreCache;
 
 // Si ya la usó antes, no mostrar splash
 if (localStorage.getItem('cte_v4')) {
