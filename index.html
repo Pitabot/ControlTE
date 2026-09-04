@@ -833,7 +833,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv18_1-multiSeleccionable.html';
+const VERSION_ARCHIVO = 'controlTEv18_2-encabezadoClaro.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1768,7 +1768,7 @@ function renderSelectorOrden(d, i, categoria) {
     return `
       <div class="orden-fila">
         <select class="orden-sel ${val ? '' : 'orden-req'}" onchange="${funcion}(${i}, this.value)">
-          <option value="" ${val ? '' : 'selected'} disabled>Hay ${coincidenDia.length} órdenes este día, elige cuál…</option>
+          <option value="" ${val ? '' : 'selected'} disabled>${categoria === 'INSALUBRE' ? 'Insalubre' : 'Tiempo Extra'}</option>
           ${opciones}
         </select>
         ${boton}
