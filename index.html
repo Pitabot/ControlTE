@@ -387,6 +387,12 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 .badge-match.err { background: rgba(181,43,39,.12); color: #b52b27; }
 .no-historial { padding: 20px; text-align: center; font-size: 12px; color: var(--mid); }
 .tol-note { background: var(--rule); border-radius: 7px; padding: 10px 14px; font-size: 11px; color: var(--mid); line-height: 1.6; margin-top: 14px; }
+/* v21.0fixCotejador — chips de checklist por concepto en el nuevo motor
+   de combinaciones. */
+.concepto-chip { display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; margin:2px 3px 2px 0; }
+.concepto-chip.ok { background:#e6f5ec; color:#2a6e3f; }
+.concepto-chip.falta { background:#fdecea; color:#b52b27; text-decoration: line-through; opacity:.75; }
+.volada-item { background:#fff8e6; border:1.5px solid #e8d48a; border-left:3px solid var(--gold); border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:12px; line-height:1.6; }
 /* v17.0: plan FREE — oculta todo lo marcado .solo-pago cuando body
    trae la clase .plan-free. Esto es solo cosmético (la barrera real
    vive en firestore-v5.rules, que niega LECTURA de /semanas para
@@ -625,50 +631,44 @@ body.plan-free #scards { display: none !important; }
   <!-- ═══ COTEJADOR ═══ -->
   <div id="tab-cotejador" class="tab-pane">
     <div class="instruccion">
-      <strong>¿Cómo funciona?</strong> Ingresa los montos y la fecha que aparecen en tu recibo de pago.
-      La calculadora decodifica cuántas horas, comidas y tiempo penado representan esos montos,
-      y los coteja con las semanas registradas en tu historial de ControlTE para verificar si coinciden.
+      <strong>¿Cómo funciona?</strong> Escribe los pesos que ves en tu recibo junto a cada clave
+      (1130, 1140, 1180, 1190) y presiona "Buscar y cotejar". La app revisa tu historial guardado
+      y te dice exactamente cuál semana (o semanas) fue la que te pagaron — sin importar qué tan
+      vieja sea esa semana. Si encuentra más de una semana que podría ser la correcta, te va a
+      pedir una fecha más de tu recibo (la <b>Fecha de Sábana / Proceso RH</b>) para decidir cuál es —
+      así no adivina.
     </div>
 
-    <div class="sec-lbl">Datos del recibo</div>
+    <div class="sec-lbl">Fechas de control</div>
+    <div class="card">
+      <div class="input-grid three">
+        <div class="field">
+          <label>Fecha de Depósito</label>
+          <input type="date" id="inp-fecha-deposito">
+          <span class="hint">Cuándo cayó el dinero en tu cuenta</span>
+        </div>
+        <div class="field">
+          <label>Catorcena del recibo</label>
+          <input type="date" id="inp-fecha-catorcena">
+          <span class="hint">Fecha de pago / inicio de catorcena impresa en el recibo</span>
+        </div>
+        <div class="field">
+          <label>Fecha de Sábana / Proceso RH</label>
+          <input type="date" id="inp-fecha-sabana">
+          <span class="hint">Solo hace falta llenarla si la app encuentra más de una semana posible para el mismo pago</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-lbl">Conceptos depositados en el recibo</div>
     <div class="card">
       <div class="input-grid">
         <div class="field">
-          <label>Nivel</label>
+          <label>Nivel (referencia)</label>
           <select id="inp-nivel"></select>
         </div>
         <div class="field">
-          <label>Fecha del recibo / catorcena</label>
-          <input type="date" id="inp-fecha">
-          <span class="hint">Fecha de pago o inicio de catorcena</span>
-        </div>
-      </div>
-
-      <div class="input-grid three">
-        <div class="field">
-          <label>Concepto 1130 — T.E. medido ($)</label>
-          <input type="number" id="inp-1130" placeholder="0.00" min="0" step="0.01">
-          <span class="hint">Tiempo extraordinario ocasional</span>
-        </div>
-        <div class="field">
-          <label>Concepto 1140 — Comidas ($)</label>
-          <input type="number" id="inp-1140" placeholder="0.00" min="0" step="0.01">
-          <span class="hint">$187.75 por comida</span>
-        </div>
-        <div class="field">
-          <label>Concepto 1190 — T. penado ($)</label>
-          <input type="number" id="inp-1190" placeholder="0.00" min="0" step="0.01">
-          <span class="hint">Tiempo penado (recibo o CCT)</span>
-        </div>
-      </div>
-      <div class="input-grid">
-        <div class="field">
-          <label>Concepto 1180 — TE Tolerancia ($)</label>
-          <input type="number" id="inp-1180" placeholder="0.00" min="0" step="0.01">
-          <span class="hint">Tiempo extra por tolerancia</span>
-        </div>
-        <div class="field">
-          <label>Jornada</label>
+          <label>Jornada (referencia)</label>
           <select id="inp-jornada">
             <option value="00">Jornada 00 — Lunes a Viernes</option>
             <option value="04">Jornada 04 — Turno discontinuo</option>
@@ -677,11 +677,64 @@ body.plan-free #scards { display: none !important; }
         </div>
       </div>
 
-      <button class="btn-calc" onclick="cotejarRecibo()">🔍 Decodificar y cotejar</button>
+      <div class="input-grid">
+        <div class="field">
+          <label>Fecha REFERENCIA del recibo — semana A (opcional)</label>
+          <input type="date" id="inp-ref-fecha-a">
+          <span class="hint">Cópiala de la columna REFERENCIA junto a la clave 1130/1140/1180/1190 en tu recibo real</span>
+        </div>
+        <div class="field">
+          <label>Fecha REFERENCIA del recibo — semana B (opcional)</label>
+          <input type="date" id="inp-ref-fecha-b">
+          <span class="hint">La mayoría de recibos PEMEX traen 2 fechas de referencia por catorcena, una por semana</span>
+        </div>
+      </div>
+
+      <div class="input-grid three">
+        <div class="field">
+          <label>1130 — T.E. medido ($)</label>
+          <input type="number" id="inp-1130" placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>1130 — o total de horas TE (opcional)</label>
+          <input type="number" id="inp-1130-horas" placeholder="0.0" min="0" step="0.1">
+          <span class="hint">Si lo llenas, se busca por horas en vez de pesos</span>
+        </div>
+        <div class="field">
+          <label>1140 — Comidas ($)</label>
+          <input type="number" id="inp-1140" placeholder="0.00" min="0" step="0.01">
+          <span class="hint">$187.75 por comida</span>
+        </div>
+      </div>
+      <div class="input-grid three">
+        <div class="field">
+          <label>1180 — TE Tolerancia ($)</label>
+          <input type="number" id="inp-1180" placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="field">
+          <label>1190 — T. penado ($)</label>
+          <input type="number" id="inp-1190" placeholder="0.00" min="0" step="0.01">
+          <span class="hint">Primero prueba con lo que PEMEX paga normalmente; si no encaja, prueba con la fórmula completa del contrato</span>
+        </div>
+        <div class="field">
+          <label>1430 — Insalubridad/peligrosidad ($, solo referencia)</label>
+          <input type="number" id="inp-1430" placeholder="0.00" min="0" step="0.01">
+          <span class="hint">No se coteja automáticamente — CCT Cláusulas 63/64 ligan el monto a la actividad específica y a la Forma 7 Pemex 12-44; ControlTE no captura esos datos</span>
+        </div>
+      </div>
+      <div class="input-grid">
+        <div class="field">
+          <label>Arrastre — monto ($, solo referencia)</label>
+          <input type="number" id="inp-arrastres" placeholder="0.00" min="0" step="0.01">
+          <span class="hint">No se coteja automáticamente — CCT Cláusula 193 (factor 7.33), exclusivo de personal de turno continuo; ControlTE no registra horas de arrastre en jornada 00/04/07</span>
+        </div>
+      </div>
+
+      <button class="btn-calc" onclick="cotejarRecibo()">🔍 Buscar y cotejar</button>
     </div>
 
     <div id="resultado">
-      <div class="sec-lbl">Decodificación del recibo</div>
+      <div class="sec-lbl">Decodificación de referencia</div>
       <div style="margin-bottom:20px;">
         <div class="result-header" id="res-header">Resultado</div>
         <div class="result-body">
@@ -690,9 +743,19 @@ body.plan-free #scards { display: none !important; }
       </div>
 
       <div class="tol-note" id="tol-note" style="display:none"></div>
+      <div class="tol-note" id="cotejo-aviso" style="display:none;background:#fff3f2;color:var(--red);border:1px dashed var(--red);"></div>
+      <div class="tol-note" id="cotejo-solo-referencia" style="display:none;"></div>
 
-      <div class="sec-lbl" style="margin-top:20px;">Cotejo con historial</div>
-      <div id="cotejo-area"></div>
+      <div class="sec-lbl" style="margin-top:20px;">Semanas liquidadas por este recibo</div>
+      <div id="cotejo-liquidadas"></div>
+
+      <div id="cotejo-confirmar-wrap" style="display:none;margin:14px 0;">
+        <button class="btn-calc" id="btn-confirmar-cotejo" onclick="confirmarLiquidacionCotejo()" style="background:var(--green);">✓ Confirmar y marcar como pagadas</button>
+        <div id="cotejo-confirm-status" style="font-size:12px;margin-top:8px;color:var(--mid);"></div>
+      </div>
+
+      <div class="sec-lbl" style="margin-top:20px;">Semanas pendientes / voladas (no cobradas en este recibo)</div>
+      <div id="cotejo-voladas"></div>
     </div>
   </div>
 
@@ -838,7 +901,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv20_1-grupos.html';
+const VERSION_ARCHIVO = 'controlTEv21.0fixCotejador.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -967,10 +1030,24 @@ function puedeUsarSemana(s) {
 const SEM_BASE  = 19;
 const DATE_BASE = new Date(2026, 4, 4); // lunes 4 mayo 2026 = semana 19
 
-let nivel   = parseInt(localStorage.getItem('cte_nivel')   || 21);
-let semana  = parseInt(localStorage.getItem('cte_semana')  || SEM_BASE);
-let datos   = JSON.parse(localStorage.getItem('cte_v4')    || '{}');
-let jornada = localStorage.getItem('cte_jornada') || '00';
+// FIX v20.2: esta lectura inicial no tenía try/catch — un JSON.parse sobre
+// un 'cte_v4' corrupto (cierre abrupto a media escritura, storage
+// manipulado, etc.) o un localStorage bloqueado por completo (Safari con
+// cookies bloqueadas, modo privado estricto) tumbaba TODO el <script> ahí
+// mismo: nunca se llegaban a definir semData()/render()/initApp(), y la
+// app se quedaba congelada en el splash para siempre, sin ningún mensaje
+// visible. Se aísla con valores por defecto seguros, mismo patrón que ya
+// usa getLicencia() para 'cte_lic'.
+let nivel, semana, datos, jornada;
+try {
+  nivel   = parseInt(localStorage.getItem('cte_nivel')   || 21);
+  semana  = parseInt(localStorage.getItem('cte_semana')  || SEM_BASE);
+  datos   = JSON.parse(localStorage.getItem('cte_v4')    || '{}');
+  jornada = localStorage.getItem('cte_jornada') || '00';
+} catch (eInit) {
+  console.error('Lectura inicial de localStorage falló, usando valores por defecto:', eInit);
+  nivel = 21; semana = SEM_BASE; datos = {}; jornada = '00';
+}
 // FIX v20.1: cache local del nombre, mismo patrón que nivel/jornada arriba.
 // Se pinta de inmediato en el INIT (abajo) para que el campo no se vea
 // vacío mientras Firestore responde o si se abre sin conexión, y
@@ -1019,11 +1096,6 @@ function semData(s) {
   }
   return datos[k];
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// FIREBASE — reemplaza JSONBin por completo.
-// firebaseConfig NO es secreto (identifica el proyecto, no da permisos).
-// La seguridad real vive en firestore.rules, ya desplegado en controlte-pro
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -1032,9 +1104,27 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
+
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
+
+// FIX v20.2 (bugs #5 y #6): no había enablePersistence() — cualquier
+// escritura de Firestore en cola (p.ej. la que dispara pagehide/
+// visibilitychange justo al cerrar la app) vivía SOLO en memoria del
+// proceso de la pestaña. Si el navegador/SO mataba el proceso antes de
+// que esa escritura terminara de confirmarse (típico en móvil, señal
+// débil, cierre abrupto), se perdía sin ningún aviso — el dato seguía a
+// salvo en localStorage, pero el respaldo en la nube de esa edición
+// concreta se perdía hasta la siguiente sesión. Con persistencia offline
+// activada, la cola vive en IndexedDB: sobrevive un cierre abrupto y el
+// propio SDK la reintenta solo en cuanto la app vuelve a abrir con
+// conexión. 'failed-precondition' (varias pestañas abiertas a la vez) y
+// 'unimplemented' (navegador sin soporte) no deben tumbar el arranque —
+// la app sigue funcionando igual que antes, solo sin este respaldo extra.
+db.enablePersistence().catch(e => {
+  console.error('enablePersistence() no se pudo activar:', e.code || e);
+});
 
 let fbUid    = null;   // se llena al autenticar, ver initAuthFirebase()
 let fbCodigo = null;   // codigo de licencia activo, una vez canjeado
@@ -1100,12 +1190,24 @@ function congelarMontos(s) {
   sd.congelado = Date.now();
 }
 
+// FIX v20.2: guardar() no tenía NINGÚN try/catch. Si congelarMontos()
+// tronaba (mismo caso que v17.4 ya resolvió para guardarAhoraDirecto(), ej.
+// un día con forma inesperada tras una fusión de restaurarDesdeNube()) o si
+// algún localStorage.setItem lanzaba QuotaExceededError, la función se
+// detenía ahí mismo: ni el resto de localStorage ni
+// guardarSemanaFirestoreDebounced() llegaban a ejecutarse — la captura se
+// perdía completa, sin ningún rastro visible, mientras render() ya había
+// pintado el valor en pantalla. Se aísla cada mitad para que un fallo de
+// cálculo no bloquee el guardado local, y un fallo de storage no bloquee
+// el intento de subir a Firestore (que es justo el respaldo en ese caso).
 function guardar() {
-  congelarMontos(semana);
-  localStorage.setItem('cte_v4',      JSON.stringify(datos));
-  localStorage.setItem('cte_nivel',   nivel);
-  localStorage.setItem('cte_semana',  semana);
-  localStorage.setItem('cte_jornada', jornada);
+  try { congelarMontos(semana); } catch (eCalc) { console.error('guardar(): congelarMontos falló', eCalc); }
+  try {
+    localStorage.setItem('cte_v4',      JSON.stringify(datos));
+    localStorage.setItem('cte_nivel',   nivel);
+    localStorage.setItem('cte_semana',  semana);
+    localStorage.setItem('cte_jornada', jornada);
+  } catch (eStorage) { console.error('guardar(): localStorage falló', eStorage); }
   guardarSemanaFirestoreDebounced();
 }
 
@@ -1176,12 +1278,21 @@ async function guardarSemanaFirestore() {
     await db.collection('cuentas').doc(fbCodigo)
              .collection('semanas').doc('s' + semana)
              .set(sd);
-    // Última actividad: escritura aparte y NO bloqueante — si falla (p.ej.
-    // porque la regla de 'ultimoAcceso' todavía no está publicada en
-    // Firestore), no debe tumbar el guardado real de la semana, que es
-    // lo crítico. El admin usa este campo solo para referencia.
+    // Última actividad + perfil (nivel/jornada): escritura aparte y NO
+    // bloqueante — si falla, no debe tumbar el guardado real de la
+    // semana, que es lo crítico. El admin usa 'ultimoAcceso' solo como
+    // referencia.
+    // FIX v20.2: se agregan 'nivel' y 'jornada' a este mismo update.
+    // Antes NUNCA se escribían de vuelta al documento de cuenta —
+    // restaurarDesdeNube() los lee de perfil.nivel/perfil.jornada en cada
+    // carga, así que el valor elegido por el trabajador en el selector se
+    // revertía solo al valor viejo cada vez que la app recargaba con
+    // conexión, afectando cálculos de comidas/tolerancia y salario/hora
+    // sin ningún aviso. Requiere que firestore-v5.3.rules incluya
+    // 'nivel'/'jornada' en el hasOnly() de esta regla (la de heartbeat,
+    // uid ya autorizado) — ver ese archivo.
     db.collection('cuentas').doc(fbCodigo)
-      .update({ ultimoAcceso: Date.now() })
+      .update({ ultimoAcceso: Date.now(), nivel: nivel, jornada: jornada })
       .catch(() => {});
     setSyncStatus('ok');
   } catch (e) {
@@ -1301,18 +1412,50 @@ async function restaurarDesdeNube() {
     // ahora que sí hay conexión, para que el otro dispositivo las reciba
     // en su proximo restaurarDesdeNube().
     const semanasRemotasIds = new Set(semanasSnap.docs.map(d => d.id));
+    // FIX v20.2 (bug #2): antes, si CUALQUIER iteración de este bucle
+    // lanzaba (ej. corte de red a media subida, con varias semanas de
+    // rezago en el dispositivo), el catch general de toda la función se
+    // tragaba el error sin loguear nada y sin indicar qué semana(s)
+    // fallaron — las que aún no se habían intentado subir en ese ciclo se
+    // quedaban sin ningún reintento programado hasta que el trabajador
+    // volviera a editar esa semana específica. Ahora cada semana se sube
+    // en su propio try/catch: una falla puntual ya no aborta el resto del
+    // lote, se loguea a consola y se registra en 'ultimoError' (mismo
+    // patrón que guardarSemanaFirestore(), FIX v12.3.2). Como el
+    // 'congelado' local de esa semana sigue siendo más nuevo que el de la
+    // nube, el siguiente restaurarDesdeNube() la vuelve a intentar sola.
+    const semanasFallidas = [];
     for (const sID of Object.keys(datos)) {
       const local = datos[sID];
       const localTS = local.congelado || 0;
       const enNube = semanasRemotasIds.has(sID);
       const remotaTS = enNube ? (semanasSnap.docs.find(d => d.id === sID).data().congelado || 0) : -1;
       if (!enNube || localTS > remotaTS) {
-        await cuentaRef.collection('semanas').doc(sID).set(local);
+        try {
+          await cuentaRef.collection('semanas').doc(sID).set(local);
+        } catch (eSemana) {
+          semanasFallidas.push(sID);
+          console.error('restaurarDesdeNube(): no se pudo subir', sID, eSemana.code || '', eSemana.message || eSemana);
+        }
       }
+    }
+    if (semanasFallidas.length) {
+      cuentaRef.update({
+        ultimoError: `${new Date().toISOString()} | restaurarDesdeNube: fallaron ${semanasFallidas.join(',')}`
+      }).catch(() => {});
     }
 
     return true;
   } catch (e) {
+    // FIX v20.2 (bug #2): antes este catch general (fallo al leer el
+    // perfil o el listado de semanas) también se tragaba el error sin
+    // dejar rastro. Mismo patrón que guardarSemanaFirestore().
+    console.error('restaurarDesdeNube() falló:', e.code || '', e.message || e);
+    if (fbCodigo) {
+      db.collection('cuentas').doc(fbCodigo)
+        .update({ ultimoError: `${new Date().toISOString()} | restaurarDesdeNube: ${e.code || ''} ${e.message || e}` })
+        .catch(() => {});
+    }
     return false;
   }
 }
@@ -1363,8 +1506,28 @@ async function validarCodigo() {
 
   const ref = db.collection('cuentas').doc(raw);
 
+  // FIX v20.2 (bug #10): antes, este ref.get() vivía dentro del mismo
+  // try/catch que el update() de más abajo, así que un rechazo aquí caía
+  // en el mensaje genérico del catch general ("Verifica tu código y
+  // teléfono") sin distinguir la causa. Con el tope de dispositivos ahora
+  // en 3 (firestore-v5.3.rules), la regla 'allow get' rechaza este mismo
+  // get() con permission-denied cuando la cuenta ya tiene 3 uids y este
+  // fbUid no es ninguno de ellos — es la ÚNICA razón por la que este get()
+  // específico puede dar permission-denied (el resto de fallas aquí son
+  // de conectividad), así que ahora se separa para dar un mensaje preciso
+  // en ese caso concreto, en vez de dejar al trabajador adivinando.
+  let snap;
   try {
-    const snap = await ref.get();
+    snap = await ref.get();
+  } catch (errGet) {
+    msg.className = "unlock-msg err";
+    msg.innerText = (errGet.code === 'permission-denied')
+      ? "Este código ya alcanzó el máximo de dispositivos autorizados. Contacta a soporte."
+      : "Sin conexión. Intenta de nuevo.";
+    return;
+  }
+
+  try {
     if (!snap.exists) {
       msg.className = "unlock-msg err";
       msg.innerText = "Código no válido.";
@@ -1494,14 +1657,26 @@ async function asegurarUidRegistrado(codigo) {
     const ref = db.collection('cuentas').doc(codigo);
     const snap = await ref.get();
     if (!snap.exists) return;
-    const uids = snap.data().uids || [];
-    if (uids.includes(fbUid)) return; // ya registrado, nada que hacer
+    const cuenta = snap.data();
+    const uids = cuenta.uids || [];
+    if (uids.includes(fbUid)) {
+      // FIX v20.2 (bug #9): este uid ya está autorizado en Firestore, pero
+      // si 'cte_lic' se perdió (reinstalación, caché limpiada, contenedor
+      // de WebView nuevo) mientras 'cte_codigo' sobrevivió, licenciaActiva()
+      // seguía dando false y el paywall bloqueaba al usuario aunque su
+      // acceso siguiera vigente en el servidor — nadie reconstruía cte_lic
+      // en este camino (ni restaurarDesdeNube() ni esta función lo hacían).
+      // Se reconstruye aquí con la 'expira' real ya leída de la cuenta.
+      setLicencia({ code: codigo, activado: Date.now(), expira: cuenta.expira || 0 });
+      return; // ya registrado, nada más que hacer
+    }
 
     if (uids.length === 0) {
       // Nadie ha reclamado esta cuenta en Firestore todavía: este
       // dispositivo, al tener ya una licencia local vigente para este
       // código, se registra solo — mismo criterio que intentarAutoRegistro().
       await ref.update({ uids: [fbUid] });
+      setLicencia({ code: codigo, activado: Date.now(), expira: cuenta.expira || 0 });
     }
     // Si uids.length > 0 y este uid no está ahí, es un dispositivo
     // distinto al ya registrado — no se toca nada aquí (eso requiere el
@@ -1532,7 +1707,42 @@ async function initApp() {
     fbUid = null;
   }
 
-  fbCodigo = localStorage.getItem('cte_codigo') || null;
+  // FIX v20.2 (bug #4): signInAnonymously() solo se intentaba una vez, al
+  // arrancar. Si fallaba (señal intermitente al abrir, típico en campo),
+  // fbUid quedaba null el resto de la sesión y NINGÚN guardado volvía a
+  // llegar a Firestore — ni el debounce ni el reintento de 5s corren sin
+  // fbUid (ver guardarSemanaFirestore()/setInterval más abajo), hasta que
+  // el trabajador recargara toda la página. Este intervalo reintenta el
+  // login solo mientras siga sin resolverse; en cuanto lo consigue, se
+  // desactiva solo y retoma el enlace del código + el guardado pendiente.
+  if (!fbUid) {
+    let authRetryTimer = setInterval(async () => {
+      if (fbUid) { clearInterval(authRetryTimer); return; }
+      try {
+        const cred = await auth.signInAnonymously();
+        fbUid = cred.user.uid;
+        clearInterval(authRetryTimer);
+        if (fbCodigo) {
+          await asegurarUidRegistrado(fbCodigo);
+          guardarSemanaFirestoreDebounced();
+        }
+      } catch (eRetry) {
+        // Sigue sin señal — se reintenta en el siguiente tick.
+      }
+    }, 10000);
+  }
+
+  // FIX v20.2: esta lectura no tenía try/catch, situada entre dos bloques
+  // try/catch de la misma función — si localStorage estaba bloqueado por
+  // completo (Safari con cookies bloqueadas, modo privado estricto),
+  // lanzaba SecurityError sin capturar dentro de una función async
+  // invocada sin .catch() (window.onload), dejando la app congelada en el
+  // splash indefinidamente sin ningún mensaje visible.
+  try {
+    fbCodigo = localStorage.getItem('cte_codigo') || null;
+  } catch (eCodigo) {
+    fbCodigo = null;
+  }
 
   // v13.0: catálogo de órdenes de trabajo — se carga una sola vez al
   // iniciar, sin importar si hay sesión o no (es lectura pública para
@@ -2246,9 +2456,12 @@ function decodificar(niv, m1130, m1140, m1180, m1190) {
   return result;
 }
 
-function leerHistorialCot() {
-  try { return JSON.parse(localStorage.getItem('cte_v4') || '{}'); } catch { return {}; }
-}
+// v21.0fixCotejador: antes leerHistorialCot() releía y re-parseaba
+// 'cte_v4' de localStorage cada vez — podía quedar desactualizado frente
+// a ediciones ya hechas en memoria (el objeto 'datos' del script
+// principal, disponible aquí por closure) que aún no se habían vuelto a
+// guardar. Se elimina esa función y el motor nuevo usa 'datos'
+// directamente en obtenerSemanasPendientesCot().
 
 // Igual que calcDia() del archivo principal, pero recibe salSnap/arcSnap
 // de la semana (sd.salSnap/sd.arcSnap) en vez de usar el nivel actual —
@@ -2298,66 +2511,426 @@ function calcSemanaCot(sd, nivelFallback) {
   return { horas: tH, te: Math.round(tTE*100)/100, comidas: tC, importe_comidas: Math.round(tIC*100)/100, tol: Math.round(tTET*100)/100, penCCT: Math.round(tPcct*100)/100, penRecibo: Math.round(tPrec*100)/100 };
 }
 
-function semanasRelevantesCot(historial, fechaRecibo) {
-  const fd = fechaRecibo ? new Date(fechaRecibo + 'T12:00') : null;
-  const resultados = [];
-  Object.keys(historial).forEach(k => {
-    const sd = historial[k];
-    if (!sd.dias || sd.dias.length === 0) return;
-    const tH = sd.dias.reduce((s, d) => s + (d.horas || 0), 0);
-    if (tH === 0 && !sd.pagado) return;
-    const ini = new Date(sd.dias[0].fecha + 'T12:00');
-    const fin = new Date(sd.dias[6].fecha + 'T12:00');
-    const numSem = parseInt(k.slice(1));
-    let coincideFecha = false, tipoCoinc = '';
-    if (fd) {
-      if (fd >= ini && fd <= fin) { coincideFecha = true; tipoCoinc = 'semana'; }
-      const diffDias = Math.abs((fd - ini) / 86400000);
-      if (!coincideFecha && diffDias <= 28) { coincideFecha = true; tipoCoinc = 'cercana'; }
-    } else {
-      coincideFecha = true; tipoCoinc = 'sin_fecha';
-    }
-    if (coincideFecha) resultados.push({ key: k, numSem, sd, ini, fin, tipoCoinc });
-  });
-  resultados.sort((a, b) => {
-    if (a.tipoCoinc === 'semana' && b.tipoCoinc !== 'semana') return -1;
-    if (b.tipoCoinc === 'semana' && a.tipoCoinc !== 'semana') return 1;
-    return b.numSem - a.numSem;
-  });
-  return resultados;
-}
-
 const f$Cot = n => '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
 const fDateCot = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX', {day:'2-digit', month:'short', year:'numeric'});
 
-function diffBadge(val1, val2, label, tolerancia) {
-  const diff = Math.abs(val1 - val2);
-  const pct  = val2 > 0 ? diff / val2 : (val1 > 0 ? 1 : 0);
-  let cls = 'ok', txt = '✓ Coincide';
-  if (diff > tolerancia) {
-    if (pct > 0.10) { cls = 'err'; txt = `▲ ${f$Cot(diff)}`; }
-    else             { cls = 'warn'; txt = `≈ ${f$Cot(diff)}`; }
-  }
-  return { cls, txt, diff, pct };
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// v21.0fixCotejador — MOTOR DE COMBINACIONES DE SEMANAS PENDIENTES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Reemplaza el cotejo viejo (que solo comparaba, semana por semana, las
+// más CERCANAS EN FECHA al recibo) por una búsqueda real de qué semana o
+// combinación de semanas PENDIENTES (sd.pagado !== true) explica cada
+// monto del recibo — sin importar qué tan separadas estén en el tiempo.
+// Eso es justo lo que rompía el cotejo con el "descontrol de fechas de
+// RH": un recibo puede liquidar semanas viejas sueltas, o una mezcla de
+// semanas no consecutivas, y comparar solo por cercanía de fecha nunca
+// las iba a encontrar.
+
+// Confirmado por el usuario, de su experiencia real: Recursos Humanos
+// nunca paga de inmediato — jamás en menos de ~4 semanas desde que se
+// trabajó, y por supuesto jamás puede pagar una semana que todavía no ha
+// pasado (no lee el futuro). Es un valor FIJO en el código, no un ajuste
+// que el usuario tenga que manejar en la pantalla — si su experiencia
+// cambia, se le pide a Claude que edite este número, no un campo de la UI.
+const RH_REZAGO_MINIMO_DIAS = 28; // ~4 semanas
+
+// Descarta como candidatas las semanas que sean implausibles frente a
+// 'fechaAncla' (Fecha de Sábana si se dio, si no Fecha de Depósito):
+// tanto las que caen DESPUÉS de esa fecha (pago de algo que aún no se
+// trabaja — imposible) como las que caen MUY CERCA de ella (pago
+// inmediato — no pasa en la práctica).
+function excluirSemanasImplausibles(pendientes, fechaAncla) {
+  if (!fechaAncla) return pendientes;
+  const ancla = new Date(fechaAncla + 'T12:00');
+  return pendientes.filter(p => {
+    const fin = new Date(p.fin + 'T12:00');
+    const diasDeRezago = (ancla - fin) / 86400000;
+    return diasDeRezago >= RH_REZAGO_MINIMO_DIAS;
+  });
 }
+
+// Bolsa de TODAS las semanas pendientes de cobro, sin filtrar por fecha.
+// Usa el salario/ARC histórico congelado de cada semana (sd.salSnap/
+// arcSnap, vía calcSemanaCot) — nunca el nivel actual del trabajador.
+function obtenerSemanasPendientesCot(nivelFallback) {
+  const lista = [];
+  Object.keys(datos).forEach(key => {
+    const sd = datos[key];
+    if (!sd || !sd.dias || sd.dias.length === 0) return;
+    if (sd.pagado === true) return; // ya liquidada, fuera de la bolsa
+    const totalHoras = sd.dias.reduce((s, d) => s + (d.horas || 0), 0);
+    if (totalHoras === 0) return; // semana vacía, nada que cobrar
+    const c = calcSemanaCot(sd, nivelFallback);
+    lista.push({
+      key,
+      numSem: parseInt(key.slice(1)),
+      ini: sd.dias[0].fecha,
+      fin: sd.dias[6].fecha,
+      // Fecha de referencia para el desempate por proximidad: el ÚLTIMO
+      // día de la semana (cuando la semana "cierra" y se vuelve cobrable).
+      fechaTieBreak: sd.dias[6].fecha,
+      horas: c.horas,
+      te: c.te,
+      importeComidas: c.importe_comidas,
+      tol: c.tol,
+      penCCT: c.penCCT,
+      penRecibo: c.penRecibo,
+      // Total de semana completa — solo informativo (se muestra en
+      // "semanas voladas"). NO incluye prima dominical (calcSemanaCot/
+      // calcDiaHistorialCot tampoco la calculan — limitación preexistente
+      // del Cotejador, no algo nuevo de aquí).
+      totalSemana: Math.round((c.te + c.importe_comidas + c.tol + c.penCCT) * 100) / 100
+    });
+  });
+  return lista;
+}
+
+// Límite práctico de semanas a combinar: 2^20 ≈ 1,048,576 subconjuntos es
+// rápido incluso en un celular gama media. Más de 20 semanas pendientes
+// SIN PAGAR a la vez es un caso extremo (casi 5 meses de atraso total) —
+// se avisa en vez de intentar probar todas las combinaciones y colgar el
+// navegador.
+const MAX_SEMANAS_COMBINACION = 20;
+
+// DP clásico de subset-sum: sumas[mask] = sumas[mask sin su bit más bajo]
+// + valor del elemento de ese bit. Calcula la suma de los 2^n
+// subconjuntos en O(2^n) en vez de O(2^n · n).
+function calcularSumasDP(valores) {
+  const n = valores.length;
+  const total = 1 << n;
+  const sumas = new Float64Array(total);
+  for (let mask = 1; mask < total; mask++) {
+    const lsb = mask & (-mask);
+    const i = 31 - Math.clz32(lsb);
+    sumas[mask] = sumas[mask & (mask - 1)] + valores[i];
+  }
+  return sumas;
+}
+function indicesDeMascara(mask, n) {
+  const idx = [];
+  for (let i = 0; i < n; i++) if (mask & (1 << i)) idx.push(i);
+  return idx;
+}
+
+// Todas las combinaciones (subconjuntos no vacíos) de 'items' cuya suma
+// de valueFn(item) caiga dentro de 'tolerancia' del 'objetivo'.
+function combinacionesQueCoinciden(items, valueFn, objetivo, tolerancia) {
+  const n = items.length;
+  if (n === 0) return { combos: [], demasiadoGrande: false };
+  if (n > MAX_SEMANAS_COMBINACION) return { combos: [], demasiadoGrande: true };
+  const valores = items.map(valueFn);
+  const sumas = calcularSumasDP(valores);
+  const combos = [];
+  for (let mask = 1; mask < sumas.length; mask++) {
+    const suma = Math.round(sumas[mask] * 100) / 100;
+    const diff = Math.round(Math.abs(suma - objetivo) * 100) / 100;
+    if (diff <= tolerancia) combos.push({ idx: indicesDeMascara(mask, n), suma, diff });
+  }
+  return { combos, demasiadoGrande: false };
+}
+
+// La combinación individual MÁS CERCANA al objetivo, sin filtro de
+// tolerancia — solo para mostrar de referencia cuando nada coincidió.
+function combinacionMasCercana(items, valueFn, objetivo) {
+  const n = items.length;
+  if (n === 0 || n > MAX_SEMANAS_COMBINACION) return null;
+  const valores = items.map(valueFn);
+  const sumas = calcularSumasDP(valores);
+  let mejorMask = -1, mejorDiff = Infinity, mejorSuma = 0;
+  for (let mask = 1; mask < sumas.length; mask++) {
+    const suma = Math.round(sumas[mask] * 100) / 100;
+    const diff = Math.abs(suma - objetivo);
+    if (diff < mejorDiff) { mejorDiff = diff; mejorMask = mask; mejorSuma = suma; }
+  }
+  if (mejorMask === -1) return null;
+  return { idx: indicesDeMascara(mejorMask, n), suma: mejorSuma, diff: Math.round(mejorDiff * 100) / 100 };
+}
+
+// REGLA DE DESEMPATE OBLIGATORIA: entre varias combinaciones que coinciden
+// dentro de tolerancia, gana la que esté colectivamente MÁS CERCA de la
+// Fecha de Sábana de RH — nunca la de monto "más exacto". Se suma la
+// distancia en días de CADA semana de la combinación a esa fecha. Si dos
+// combinaciones empatan también en distancia, gana la de menos semanas
+// (la explicación más simple), y si aun así empatan, la de menor
+// diferencia de monto — desempates secundarios, nunca el primero.
+function elegirPorDesempate(combos, items, fechaSabanaISO) {
+  if (combos.length <= 1) return { elegido: combos[0] || null, huboDesempate: false };
+  const fechaSabana = new Date(fechaSabanaISO + 'T12:00');
+  const puntuados = combos.map(c => ({
+    ...c,
+    distancia: c.idx.reduce((acc, i) => {
+      const fecha = new Date(items[i].fechaTieBreak + 'T12:00');
+      return acc + Math.abs((fecha - fechaSabana) / 86400000);
+    }, 0)
+  }));
+  puntuados.sort((a, b) => {
+    if (a.distancia !== b.distancia) return a.distancia - b.distancia;
+    if (a.idx.length !== b.idx.length) return a.idx.length - b.idx.length;
+    return a.diff - b.diff;
+  });
+  return { elegido: puntuados[0], huboDesempate: true, alternativas: puntuados.slice(1) };
+}
+
+// Orquesta la búsqueda de UN concepto del recibo contra la bolsa de
+// semanas pendientes. Si hay empate y no se dio Fecha de Sábana, NO
+// adivina — regresa requiereDesempate:true para que la UI lo bloquee y
+// pida esa fecha explícitamente (la regla de desempate es OBLIGATORIA,
+// no un criterio opcional).
+function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta) {
+  if (!objetivo || objetivo <= 0) return null;
+  const { combos, demasiadoGrande } = combinacionesQueCoinciden(pendientes, valueFn, objetivo, tolerancia);
+  if (demasiadoGrande) return { etiqueta, objetivo, sinCoincidencia: true, demasiadoGrande: true };
+  if (combos.length === 0) {
+    const cercana = combinacionMasCercana(pendientes, valueFn, objetivo);
+    return {
+      etiqueta, objetivo, sinCoincidencia: true,
+      masCercana: cercana,
+      semanasMasCercana: cercana ? cercana.idx.map(i => pendientes[i]) : []
+    };
+  }
+  if (combos.length > 1 && !fechaSabanaISO) {
+    return { etiqueta, objetivo, requiereDesempate: true, combos };
+  }
+  const { elegido, huboDesempate, alternativas } = elegirPorDesempate(combos, pendientes, fechaSabanaISO);
+  return {
+    etiqueta, objetivo,
+    semanas: elegido.idx.map(i => pendientes[i]),
+    suma: elegido.suma, diff: elegido.diff,
+    huboDesempate, numAlternativas: huboDesempate ? alternativas.length : 0
+  };
+}
+
+// v21.0fixCotejador — FIX de contexto real: un recibo de PEMEX de verdad
+// (confirmado contra un recibo físico) trae su propia columna REFERENCIA
+// con una fecha por cada línea de clave 1130/1140/1180/1190 — típicamente
+// 2 fechas por catorcena, una por semana. Si el usuario las captura, se
+// acota la búsqueda a las semanas pendientes cuyo rango [ini,fin]
+// contenga alguna de esas fechas ANTES de probar contra toda la bolsa —
+// mucho más confiable que adivinar a ciegas. Si ninguna combinación
+// dentro de ese subconjunto cumple tolerancia (la fecha de RH no siempre
+// alinea limpio con el cierre de semana de ControlTE), cae de vuelta a la
+// bolsa completa igual que antes.
+function pendientesCercaDeReferencia(pendientes, fechasRefISO) {
+  const fechas = fechasRefISO.filter(Boolean).map(f => new Date(f + 'T12:00'));
+  if (fechas.length === 0) return null;
+  return pendientes.filter(p => {
+    const ini = new Date(p.ini + 'T12:00');
+    const fin = new Date(p.fin + 'T12:00');
+    return fechas.some(f => f >= ini && f <= fin);
+  });
+}
+function buscarConceptoConReferencia(pendientesTodas, pendientesRef, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta) {
+  if (pendientesRef && pendientesRef.length > 0) {
+    const r = buscarConcepto(pendientesRef, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta);
+    if (r && !r.sinCoincidencia) return { ...r, usoFechaReferencia: true };
+  }
+  return buscarConcepto(pendientesTodas, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta);
+}
+
+// Resultado del último cotejo — lo usa confirmarLiquidacionCotejo() para
+// saber exactamente qué semanas marcar como pagadas sin tener que
+// re-ejecutar la búsqueda.
+let ultimoResultadoCotejo = null;
+
+function renderResultadoCotejo(resultado) {
+  const wrapLiq = document.getElementById('cotejo-liquidadas');
+  const wrapVol = document.getElementById('cotejo-voladas');
+  const aviso = document.getElementById('cotejo-aviso');
+  const confirmarWrap = document.getElementById('cotejo-confirmar-wrap');
+  const fechaSabanaVal = document.getElementById('inp-fecha-sabana').value;
+
+  const avisos = [];
+  resultado.conceptos.forEach(c => {
+    if (c.requiereDesempate) {
+      avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay ${c.combos.length} combinaciones distintas de semanas que coinciden con ${f$Cot(c.objetivo)}. Ingresa la <b>Fecha de Sábana / Proceso RH</b> para desempatar y vuelve a cotejar — la regla de desempate es obligatoria, no se adivina.`);
+    } else if (c.demasiadoGrande) {
+      avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay más de ${MAX_SEMANAS_COMBINACION} semanas pendientes sin pagar — no se probaron todas las combinaciones posibles. Marca como pagadas las semanas viejas que ya cobraste, o revisa esta manualmente.`);
+    }
+  });
+  aviso.innerHTML = avisos.join('<br><br>');
+  aviso.style.display = avisos.length ? 'block' : 'none';
+
+  const conceptosResueltos = resultado.conceptos.filter(c => !c.requiereDesempate && !c.demasiadoGrande);
+
+  // Unión de semanas tocadas por el recibo, con checklist de qué
+  // concepto(s) explicaron cada una.
+  const porSemana = {};
+  conceptosResueltos.forEach(c => {
+    if (c.sinCoincidencia) return;
+    c.semanas.forEach(s => {
+      if (!porSemana[s.key]) porSemana[s.key] = { semana: s, conceptosOK: [], conceptosFaltantes: [] };
+      porSemana[s.key].conceptosOK.push(c.etiqueta);
+    });
+  });
+  Object.values(porSemana).forEach(entry => {
+    conceptosResueltos.forEach(c => {
+      if (c.sinCoincidencia) return; // ya se reporta aparte, no ensucia el checklist
+      const incluida = c.semanas.some(s => s.key === entry.semana.key);
+      if (!incluida) entry.conceptosFaltantes.push(c.etiqueta);
+    });
+  });
+  const semanasTocadas = Object.values(porSemana).sort((a, b) => a.semana.numSem - b.semana.numSem);
+  const semanasCompletas = semanasTocadas.filter(e => e.conceptosFaltantes.length === 0);
+
+  let htmlLiq = '';
+  if (semanasTocadas.length === 0) {
+    htmlLiq += `<div class="cotejo-card"><div class="cotejo-header no-match">Sin coincidencias</div><div class="no-historial">Ninguna semana pendiente (o combinación de semanas) coincidió con los montos del recibo dentro de tolerancia.</div></div>`;
+  } else {
+    htmlLiq += semanasTocadas.map(entry => {
+      const s = entry.semana;
+      const chips = entry.conceptosOK.map(e => `<span class="concepto-chip ok">✓ ${e}</span>`).join('')
+        + entry.conceptosFaltantes.map(e => `<span class="concepto-chip falta">${e}</span>`).join('');
+      const parcial = entry.conceptosFaltantes.length > 0;
+      return `<div class="cotejo-card">
+        <div class="cotejo-header ${parcial ? 'no-match' : 'match'}">
+          <div>${parcial ? '⚠️' : '✅'} Semana ${s.numSem} — ${fDateCot(s.ini)} al ${fDateCot(s.fin)}</div>
+          <span class="badge-match ${parcial ? 'warn' : 'ok'}">${parcial ? 'Liquidación parcial' : 'Liquidada completa'}</span>
+        </div>
+        <div class="cotejo-body" style="padding:10px 16px;">
+          ${chips}
+          ${parcial ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">No se marcará como pagada automáticamente — le falta coincidir en el/los concepto(s) tachados.</div>' : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const notasDesempate = conceptosResueltos.filter(c => c.huboDesempate).map(c =>
+    `<div class="tol-note">🟢 <b>${c.etiqueta}</b>: había ${c.numAlternativas + 1} combinaciones posibles para ${f$Cot(c.objetivo)} — se eligió la más cercana a la Fecha de Sábana (${fechaSabanaVal ? fDateCot(fechaSabanaVal) : '—'}).</div>`
+  ).join('');
+
+  const notasReferencia = conceptosResueltos.filter(c => c.usoFechaReferencia).map(c =>
+    `<div class="tol-note">🔵 <b>${c.etiqueta}</b>: se encontró dentro de la(s) fecha(s) de REFERENCIA del recibo que capturaste — no hizo falta buscar en el resto de semanas pendientes.</div>`
+  ).join('');
+
+  const sinMatch = conceptosResueltos.filter(c => c.sinCoincidencia && !c.demasiadoGrande);
+  const htmlSinMatch = sinMatch.map(c => {
+    const cercana = c.masCercana
+      ? `La combinación más cercana sumó ${f$Cot(c.masCercana.suma)} (diferencia de ${f$Cot(c.masCercana.diff)}) con: ${c.semanasMasCercana.map(s => 'Sem ' + s.numSem).join(', ')}.`
+      : 'No hay semanas pendientes para comparar.';
+    return `<div class="cotejo-card"><div class="cotejo-header no-match">❌ ${c.etiqueta} — sin coincidencia dentro de tolerancia</div><div class="no-historial" style="text-align:left;padding:12px 16px;">Buscabas ${f$Cot(c.objetivo)}. ${cercana}</div></div>`;
+  }).join('');
+
+  wrapLiq.innerHTML = htmlLiq + notasReferencia + notasDesempate + htmlSinMatch;
+
+  const clavesTocadas = new Set(semanasTocadas.map(e => e.semana.key));
+  const voladas = resultado.pendientes.filter(p => !clavesTocadas.has(p.key));
+  wrapVol.innerHTML = voladas.length === 0
+    ? `<div class="chip" style="display:inline-block;">✓ No quedaron semanas pendientes sin tocar por este recibo.</div>`
+    : voladas.map(p => `<div class="volada-item">
+        <b>Semana ${p.numSem}</b> — ${fDateCot(p.ini)} al ${fDateCot(p.fin)}<br>
+        ${p.horas} hrs · TE ${f$Cot(p.te)} · Comidas ${f$Cot(p.importeComidas)} ·
+        Tolerancia ${f$Cot(p.tol)} · Penado (CCT) ${f$Cot(p.penCCT)} ·
+        <b>Total semana ${f$Cot(p.totalSemana)}</b>
+      </div>`).join('');
+
+  ultimoResultadoCotejo = { semanasLiquidadas: semanasCompletas.map(e => e.semana) };
+  const btn = document.getElementById('btn-confirmar-cotejo');
+  if (semanasCompletas.length > 0) {
+    confirmarWrap.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = `✓ Confirmar y marcar ${semanasCompletas.length} semana(s) como pagadas`;
+    document.getElementById('cotejo-confirm-status').textContent = '';
+  } else {
+    confirmarWrap.style.display = 'none';
+  }
+}
+
+// Marca como pagadas SOLO las semanas completamente liquidadas (que
+// coincidieron en TODOS los conceptos declarados del recibo, no las
+// parciales) y las sincroniza a Firestore una por una. OJO: no se usa
+// guardar() aquí — esa función solo sube a Firestore la semana
+// ACTUALMENTE abierta en Captura (semData(semana)), no las semanas que
+// se acaban de tocar desde el Cotejador, así que cada semana se sube
+// explícitamente (mismo patrón que restaurarDesdeNube()).
+window.confirmarLiquidacionCotejo = async function() {
+  if (!ultimoResultadoCotejo || !ultimoResultadoCotejo.semanasLiquidadas.length) return;
+  const btn = document.getElementById('btn-confirmar-cotejo');
+  const status = document.getElementById('cotejo-confirm-status');
+  btn.disabled = true;
+  btn.textContent = 'Guardando…';
+
+  const fechaDeposito = document.getElementById('inp-fecha-deposito').value || null;
+  const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value || null;
+  const fechaSabana = document.getElementById('inp-fecha-sabana').value || null;
+
+  const claves = ultimoResultadoCotejo.semanasLiquidadas.map(s => s.key);
+  claves.forEach(key => {
+    const sd = datos[key];
+    if (!sd) return;
+    sd.pagado = true;
+    // Namespaced aparte de 'catorcena' (número 1-26 que ya usa el
+    // selector de Historial) para no pisar ese campo existente con
+    // semántica distinta — estas 3 son las fechas de control del recibo.
+    sd.reciboFechaDeposito = fechaDeposito;
+    sd.reciboFechaCatorcena = fechaCatorcena;
+    sd.reciboFechaSabana = fechaSabana;
+  });
+
+  try {
+    localStorage.setItem('cte_v4', JSON.stringify(datos));
+  } catch (eStorage) {
+    console.error('confirmarLiquidacionCotejo(): localStorage falló', eStorage);
+  }
+
+  if (fbCodigo && fbUid) {
+    const fallidas = [];
+    for (const key of claves) {
+      try {
+        await db.collection('cuentas').doc(fbCodigo).collection('semanas').doc(key).set(datos[key]);
+      } catch (eSync) {
+        fallidas.push(key);
+        console.error('confirmarLiquidacionCotejo(): no se pudo subir', key, eSync.code || '', eSync.message || eSync);
+      }
+    }
+    if (fallidas.length) {
+      db.collection('cuentas').doc(fbCodigo)
+        .update({ ultimoError: `${new Date().toISOString()} | confirmarLiquidacionCotejo: fallaron ${fallidas.join(',')}` })
+        .catch(() => {});
+      status.textContent = `⚠️ Guardado en este dispositivo. ${fallidas.length} semana(s) no se pudieron subir a la nube todavía — se reintentarán solas la próxima vez que abras la app con conexión.`;
+    } else {
+      status.textContent = `✅ ${claves.length} semana(s) marcadas como pagadas y sincronizadas.`;
+    }
+  } else {
+    status.textContent = `✅ ${claves.length} semana(s) marcadas como pagadas en este dispositivo (sin sesión activa para sincronizar).`;
+  }
+
+  btn.textContent = '✓ Liquidación confirmada';
+  render();
+};
 
 window.cotejarRecibo = function() {
   const nivelSel = parseInt(document.getElementById('inp-nivel').value);
-  const fecha   = document.getElementById('inp-fecha').value;
-  const m1130   = parseFloat(document.getElementById('inp-1130').value) || 0;
-  const m1140   = parseFloat(document.getElementById('inp-1140').value) || 0;
-  const m1180   = parseFloat(document.getElementById('inp-1180').value) || 0;
-  const m1190   = parseFloat(document.getElementById('inp-1190').value) || 0;
+  const m1130    = parseFloat(document.getElementById('inp-1130').value) || 0;
+  const h1130    = parseFloat(document.getElementById('inp-1130-horas').value) || 0;
+  const m1140    = parseFloat(document.getElementById('inp-1140').value) || 0;
+  const m1180    = parseFloat(document.getElementById('inp-1180').value) || 0;
+  const m1190    = parseFloat(document.getElementById('inp-1190').value) || 0;
+  // v21.0fixCotejador: 1430 (insalubridad/peligrosidad) y arrastre ya NO
+  // se buscan por combinación — confirmado contra el CCT real (Cláusulas
+  // 63/64 para 1430: depende de la actividad específica ejecutada y de
+  // la Forma 7 Pemex 12-44; Cláusula 193 para arrastre: es una categoría
+  // de tiempo extra exclusiva de personal de TURNO CONTINUO, con fórmula
+  // de factor 7.33 distinta a la de jornada 00/04/07). ControlTE no
+  // captura ninguno de los dos datos, así que fingir un cotejo automático
+  // sería inventar un número, no verificarlo. Se muestran solo de
+  // referencia.
+  const m1430      = parseFloat(document.getElementById('inp-1430').value) || 0;
+  const mArrastres = parseFloat(document.getElementById('inp-arrastres').value) || 0;
+  const fechaSabana = document.getElementById('inp-fecha-sabana').value;
+  const fechaRefA = document.getElementById('inp-ref-fecha-a').value;
+  const fechaRefB = document.getElementById('inp-ref-fecha-b').value;
 
-  if (m1130 === 0 && m1140 === 0 && m1180 === 0 && m1190 === 0) {
-    alert('Ingresa al menos un monto del recibo para calcular.');
+  if (m1130 === 0 && h1130 === 0 && m1140 === 0 && m1180 === 0 && m1190 === 0 && m1430 === 0 && mArrastres === 0) {
+    alert('Ingresa al menos un concepto del recibo para cotejar.');
     return;
   }
 
+  // Decodificación de referencia (informativa — usa el nivel seleccionado
+  // arriba, no el histórico de cada semana; no cambia con este fix).
   const dec = decodificar(nivelSel, m1130, m1140, m1180, m1190);
 
   document.getElementById('res-header').textContent =
-    `Decodificación · Nivel ${nivelSel} · Tasa hora TE: ${f$Cot(dec.tasa_hora)}`;
+    `Decodificación de referencia · Nivel ${nivelSel} · Tasa hora TE: ${f$Cot(dec.tasa_hora)}`;
 
   const dg = document.getElementById('decode-grid');
   dg.innerHTML = `
@@ -2383,7 +2956,7 @@ window.cotejarRecibo = function() {
     </div>
     <div class="dcard green" style="border-right:none">
       <div class="dcard-lbl">Total importe recibo</div>
-      <div class="dcard-val" style="font-size:15px">${f$Cot(m1130+m1140+m1180+m1190)}</div>
+      <div class="dcard-val" style="font-size:15px">${f$Cot(m1130+m1140+m1180+m1190+m1430+mArrastres)}</div>
     </div>
     <div class="dcard" style="border-right:none">
       <div class="dcard-lbl">Tasa hora penada · recibo</div>
@@ -2402,123 +2975,49 @@ window.cotejarRecibo = function() {
   if (notas.length) { tolNote.innerHTML = notas.join('<br>'); tolNote.style.display = 'block'; }
   else { tolNote.style.display = 'none'; }
 
-  const historial = leerHistorialCot();
-  const area = document.getElementById('cotejo-area');
-  const semanas = semanasRelevantesCot(historial, fecha);
+  const fechaDeposito = document.getElementById('inp-fecha-deposito').value;
+  const fechaAncla = fechaSabana || fechaDeposito;
+  const pendientes = excluirSemanasImplausibles(obtenerSemanasPendientesCot(nivelSel), fechaAncla);
+  const pendientesRef = pendientesCercaDeReferencia(pendientes, [fechaRefA, fechaRefB]);
+  const conceptos = [];
 
-  if (Object.keys(historial).length === 0) {
-    area.innerHTML = `<div class="cotejo-card">
-      <div class="cotejo-header no-match">Sin historial disponible</div>
-      <div class="no-historial">No se encontró historial de ControlTE en este navegador.</div>
-    </div>`;
-  } else if (semanas.length === 0) {
-    area.innerHTML = `<div class="cotejo-card">
-      <div class="cotejo-header no-match">⚠️ Sin semanas en el rango de fecha</div>
-      <div class="no-historial">No hay semanas registradas cercanas a <b>${fecha ? fDateCot(fecha) : 'la fecha indicada'}</b>.</div>
-    </div>`;
-  } else {
-    let html = '';
-    semanas.slice(0, 5).forEach(({ key, numSem, sd, tipoCoinc }) => {
-      const datos_sem = calcSemanaCot(sd, nivelSel);
-      const usandoSnapshot = sd.salSnap !== undefined;
-      const totalRecibo = m1130 + m1140 + m1180 + m1190;
-      const totalHistorial = datos_sem.te + datos_sem.importe_comidas + datos_sem.tol + datos_sem.penCCT;
-
-      const d1130 = diffBadge(m1130, datos_sem.te, '1130', 1.00);
-      const d1140 = diffBadge(m1140, datos_sem.importe_comidas, '1140', 0.50);
-      const d1180 = diffBadge(m1180, datos_sem.tol, '1180', 1.00);
-      const d1190cct = diffBadge(m1190, datos_sem.penCCT, '1190 CCT', 1.00);
-      const d1190rec = diffBadge(m1190, datos_sem.penRecibo, '1190 recibo', 1.00);
-
-      const errores = [d1130, d1140, d1180].filter(d => d.cls === 'err').length;
-      const warns   = [d1130, d1140, d1180].filter(d => d.cls === 'warn').length;
-      let matchCls = 'match', matchIcon = '✅', matchTxt = 'Coincidencia alta';
-      if (errores >= 2) { matchCls = 'error'; matchIcon = '❌'; matchTxt = 'No coincide'; }
-      else if (errores === 1 || warns >= 2) { matchCls = 'no-match'; matchIcon = '⚠️'; matchTxt = 'Coincidencia parcial'; }
-
-      const etqFecha = tipoCoinc === 'semana' ? '📅 Fecha dentro del rango' : tipoCoinc === 'cercana' ? '📅 Semana cercana' : '📋 En historial';
-      const pagadoTag = sd.pagado ? '<span style="color:#2a6e3f;font-size:10px;"> · ✓ Pagada</span>' : '<span style="color:#b07d2a;font-size:10px;"> · ⏳ Pendiente</span>';
-      const catTag = sd.catorcena ? `<span style="font-size:10px;color:var(--blue);margin-left:6px;">Cat. ${String(sd.catorcena).padStart(2,'0')}</span>` : '';
-      const snapTag = usandoSnapshot
-        ? `<span style="font-size:9px;color:#2a6e3f;margin-left:6px;" title="Se usó el salario congelado de esa semana">🔒 salario histórico</span>`
-        : `<span style="font-size:9px;color:#b07d2a;margin-left:6px;" title="Semana sin snapshot — se usó el nivel seleccionado arriba">⚠️ sin snapshot</span>`;
-
-      html += `<div class="cotejo-card" style="margin-bottom:14px;">
-        <div class="cotejo-header ${matchCls}">
-          <div>${matchIcon} Semana ${numSem} — ${fDateCot(sd.dias[0].fecha)} al ${fDateCot(sd.dias[6].fecha)} ${pagadoTag}${catTag}${snapTag}</div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <span class="badge-match ${matchCls === 'match' ? 'ok' : matchCls === 'no-match' ? 'warn' : 'err'}">${matchTxt}</span>
-            <span style="font-size:10px;opacity:.7">${etqFecha}</span>
-          </div>
-        </div>
-        <div class="cotejo-body">
-          <div class="cotejo-row">
-            <span>Concepto</span>
-            <div class="vals" style="gap:8px;">
-              <span style="font-size:10px;color:var(--blue);font-weight:700;">Recibo</span>
-              <span style="font-size:10px;color:#2a6e3f;font-weight:700;">Historial CCT</span>
-              <span style="font-size:10px;color:var(--mid);font-weight:700;">Diferencia</span>
-            </div>
-          </div>
-          ${m1130 > 0 || datos_sem.te > 0 ? `
-          <div class="cotejo-row">
-            <span>1130 T.E. medido (${dec.horas_1130} hrs vs ${datos_sem.horas} hrs)</span>
-            <div class="vals">
-              <span class="val-recibo">${f$Cot(m1130)}</span>
-              <span class="val-historial">${f$Cot(datos_sem.te)}</span>
-              <span class="val-diff ${d1130.cls}">${d1130.txt}</span>
-            </div>
-          </div>` : ''}
-          ${m1140 > 0 || datos_sem.importe_comidas > 0 ? `
-          <div class="cotejo-row">
-            <span>1140 Comidas (${dec.comidas} vs ${datos_sem.comidas})</span>
-            <div class="vals">
-              <span class="val-recibo">${f$Cot(m1140)}</span>
-              <span class="val-historial">${f$Cot(datos_sem.importe_comidas)}</span>
-              <span class="val-diff ${d1140.cls}">${d1140.txt}</span>
-            </div>
-          </div>` : ''}
-          ${m1180 > 0 || datos_sem.tol > 0 ? `
-          <div class="cotejo-row">
-            <span>1180 TE Tolerancia</span>
-            <div class="vals">
-              <span class="val-recibo">${f$Cot(m1180)}</span>
-              <span class="val-historial">${f$Cot(datos_sem.tol)}</span>
-              <span class="val-diff ${d1180.cls}">${d1180.txt}</span>
-            </div>
-          </div>` : ''}
-          ${m1190 > 0 || datos_sem.penCCT > 0 ? `
-          <div class="cotejo-row">
-            <span>1190 T. penado — vs CCT Cláusula 193</span>
-            <div class="vals">
-              <span class="val-recibo">${f$Cot(m1190)}</span>
-              <span class="val-historial" style="color:#b07d2a">${f$Cot(datos_sem.penCCT)}</span>
-              <span class="val-diff ${d1190cct.cls}">${d1190cct.txt}</span>
-            </div>
-          </div>
-          <div class="cotejo-row" style="background:#fafafa;">
-            <span style="font-size:11px;color:var(--mid)">1190 T. penado — vs fórmula recibo (sal÷8)</span>
-            <div class="vals">
-              <span class="val-recibo">${f$Cot(m1190)}</span>
-              <span class="val-historial">${f$Cot(datos_sem.penRecibo)}</span>
-              <span class="val-diff ${d1190rec.cls}">${d1190rec.txt}</span>
-            </div>
-          </div>` : ''}
-          <div class="cotejo-row" style="background:var(--rule);font-weight:700;">
-            <span>TOTAL</span>
-            <div class="vals">
-              <span class="val-recibo">${f$Cot(totalRecibo)}</span>
-              <span class="val-historial">${f$Cot(totalHistorial)}</span>
-              <span class="val-diff ${Math.abs(totalRecibo-totalHistorial) < 2 ? 'ok' : Math.abs(totalRecibo-totalHistorial) < totalHistorial*0.10 ? 'warn' : 'err'}">
-                ${Math.abs(totalRecibo-totalHistorial) < 2 ? '✓' : f$Cot(Math.abs(totalRecibo-totalHistorial))}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>`;
-    });
-    area.innerHTML = html;
+  if (h1130 > 0) {
+    conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.horas, h1130, 0.25, fechaSabana, '1130 · T.E. (por horas)'));
+  } else if (m1130 > 0) {
+    conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.te, m1130, 2.00, fechaSabana, '1130 · T.E. ($)'));
   }
+  if (m1140 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.importeComidas, m1140, 1.00, fechaSabana, '1140 · Comidas'));
+  if (m1180 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.tol, m1180, 2.00, fechaSabana, '1180 · Tolerancia'));
+  if (m1190 > 0) {
+    // v21.0fixCotejador: se prueba PRIMERO la fórmula "recibo" (sal÷8) —
+    // confirmado contra un recibo real que PEMEX paga con esa fórmula en
+    // la práctica (172.55 / (276.08/8) = 5.00 hrs exactas), no con la
+    // fórmula CCT completa (sal÷8 + hora TE ocasional, Cláusula 57). La
+    // fórmula CCT queda como segundo intento, útil para detectar cuando
+    // sí pagaron el importe completo que marca el contrato.
+    let r = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penRecibo, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula recibo)');
+    if (r && r.sinCoincidencia && !r.demasiadoGrande) {
+      const rCCT = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penCCT, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula CCT)');
+      if (rCCT && !rCCT.sinCoincidencia) r = rCCT;
+    }
+    conceptos.push(r);
+  }
+
+  renderResultadoCotejo({ conceptos: conceptos.filter(Boolean), pendientes });
+
+  // 1430 y arrastre: solo referencia, nunca buscados — ver comentario más
+  // arriba sobre por qué no son cotejables con los datos que ControlTE
+  // captura hoy.
+  const refWrap = document.getElementById('cotejo-solo-referencia');
+  const notasRef = [];
+  if (m1430 > 0) {
+    notasRef.push(`📌 <b>1430 · Insalubridad/peligrosidad</b>: ${f$Cot(m1430)} en el recibo — no cotejado automáticamente (CCT Cláusulas 63/64, depende de la actividad específica y de la Forma 7 Pemex 12-44; ControlTE no captura esos datos). Verifícalo manualmente contra tus órdenes de insalubridad de la semana.`);
+  }
+  if (mArrastres > 0) {
+    notasRef.push(`📌 <b>Arrastre</b>: ${f$Cot(mArrastres)} en el recibo — no cotejado automáticamente (CCT Cláusula 193, exclusivo de personal de turno continuo; ControlTE no registra horas de arrastre en jornada 00/04/07).`);
+  }
+  refWrap.innerHTML = notasRef.join('<br><br>');
+  refWrap.style.display = notasRef.length ? 'block' : 'none';
 
   document.getElementById('resultado').style.display = 'block';
   document.getElementById('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2535,7 +3034,11 @@ Object.keys(TAB).sort((a,b) => a-b).forEach(n => {
   selCot.appendChild(o);
 });
 document.getElementById('inp-jornada').value = localStorage.getItem('cte_jornada') || '00';
-document.getElementById('inp-fecha').value = new Date().toISOString().slice(0, 10);
+// Depósito y catorcena parten de hoy (el usuario normalmente los corrige);
+// la Fecha de Sábana se deja VACÍA a propósito — es la que alimenta el
+// desempate obligatorio y no debe asumirse en silencio.
+document.getElementById('inp-fecha-deposito').value = new Date().toISOString().slice(0, 10);
+document.getElementById('inp-fecha-catorcena').value = new Date().toISOString().slice(0, 10);
 
 })();
 
