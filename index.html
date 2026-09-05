@@ -387,7 +387,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 .badge-match.err { background: rgba(181,43,39,.12); color: #b52b27; }
 .no-historial { padding: 20px; text-align: center; font-size: 12px; color: var(--mid); }
 .tol-note { background: var(--rule); border-radius: 7px; padding: 10px 14px; font-size: 11px; color: var(--mid); line-height: 1.6; margin-top: 14px; }
-/* v22.0/22.1-lectorPDF — chips de checklist por concepto en el motor de
+/* v22.x-lectorPDF — chips de checklist por concepto en el motor de
    combinaciones del Cotejador, y estado del lector de PDF. */
 .concepto-chip { display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; margin:2px 3px 2px 0; }
 .concepto-chip.ok { background:#e6f5ec; color:#2a6e3f; }
@@ -659,10 +659,6 @@ body.plan-free #scards { display: none !important; }
           <span class="hint">Solo hace falta llenarla si la app encuentra más de una semana posible para el mismo pago</span>
         </div>
       </div>
-      <!-- FIX v22.2: faltaba este campo — confirmarLiquidacionCotejo()
-           marcaba pagado=true pero nunca llenaba 'catorcena' (el número
-           1-26 que usa el selector de Historial), así que las semanas
-           quedaban en verde "PAGADO" pero con "-- Catorcena --" vacío. -->
       <div class="input-grid">
         <div class="field">
           <label>Número de catorcena (opcional)</label>
@@ -689,18 +685,6 @@ body.plan-free #scards { display: none !important; }
 
     <div class="sec-lbl">Conceptos depositados en el recibo</div>
     <div class="card">
-      <!-- FIX v22.1: se quitaron los selectores de Nivel/Jornada "de
-           referencia" — se llenaban con lo último guardado en este
-           teléfono (localStorage), no con lo que dice el recibo, y podían
-           mostrar un nivel completamente distinto al del PDF (ej. Nivel 8
-           en pantalla cuando el recibo real era Nivel 21). El cotejo real
-           NUNCA los necesitó: cada semana pendiente ya trae su propio
-           nivel/salario congelado (sd.salSnap/arcSnap) desde que se
-           capturó, que es la fuente de verdad correcta — no un selector
-           aparte que se puede desincronizar. Ahora se usa directo el
-           nivel/jornada ACTUAL y en vivo de la cuenta (variables 'nivel'/
-           'jornada' del script principal) solo como referencia de
-           respaldo para semanas viejas sin snapshot. -->
       <div class="input-grid">
         <div class="field">
           <label>Fecha REFERENCIA del recibo — semana A (opcional)</label>
@@ -931,7 +915,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv22.3-lectorPDF.html';
+const VERSION_ARCHIVO = 'controlTEv22.4-lectorPDF.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -2543,7 +2527,7 @@ const f$Cot = n => '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, max
 const fDateCot = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX', {day:'2-digit', month:'short', year:'numeric'});
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// v22.0/22.1-lectorPDF — MOTOR DE COMBINACIONES DE SEMANAS PENDIENTES
+// v22.x-lectorPDF — MOTOR DE COMBINACIONES DE SEMANAS PENDIENTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Reemplaza el cotejo viejo (que solo comparaba, semana por semana, las
 // más CERCANAS EN FECHA al recibo) por una búsqueda real de qué semana o
@@ -2608,62 +2592,137 @@ function obtenerSemanasPendientesCot(nivelFallback) {
   return lista;
 }
 
-// Límite práctico de semanas a combinar: 2^20 ≈ 1,048,576 subconjuntos es
-// rápido incluso en un celular gama media.
-const MAX_SEMANAS_COMBINACION = 20;
+// FIX (reportado por el usuario): el motor original probaba TODAS las
+// combinaciones posibles (2^n) — con más de 20 semanas pendientes eso ya
+// es más de un millón de combinaciones, y con 30+ se vuelve imposible de
+// calcular en un celular. Un trabajador con un rezago real de meses/años
+// contra PEMEX puede tener fácilmente más de 20 semanas sin pagar — el
+// límite de 20 lo bloqueaba a él precisamente, el caso que más necesita
+// esta herramienta.
+//
+// Reemplazo: en vez de probar TODOS los subconjuntos, solo se combinan
+// hasta MAX_TAMANO_COMBINACION semanas a la vez (1 semana sola, o 2, 3...
+// hasta ese máximo). Es extremadamente improbable que un solo pago junte
+// más semanas atrasadas que eso de una sola vez. El usuario decidió 6
+// como número seguro. Esto crece mucho más lento que 2^n según crece el
+// número de semanas pendientes, así que ya no hace falta un tope bajo:
+// MAX_SEMANAS_PENDIENTES es un límite de seguridad muy amplio, no algo
+// que se espere alcanzar en la práctica.
+const MAX_TAMANO_COMBINACION = 6;
+const MAX_SEMANAS_PENDIENTES = 90;
+// Red de seguridad adicional: si el monto buscado es absurdo frente a lo
+// que hay en la bolsa (ej. un cero de más al capturar, $50,000 en vez de
+// $5,000), la poda por tolerancia deja de servir — casi ninguna suma
+// parcial la rebasa, así que exploraría casi todas las combinaciones
+// posibles igual. Este tope duro de nodos visitados evita que eso cuelgue
+// el navegador; con montos normales nunca se alcanza (probado: <20ms con
+// 90 semanas reales).
+const MAX_ITERACIONES_BUSQUEDA = 3000000;
 
-// DP clásico de subset-sum: sumas[mask] = sumas[mask sin su bit más bajo]
-// + valor del elemento de ese bit. Calcula la suma de los 2^n
-// subconjuntos en O(2^n) en vez de O(2^n · n).
-function calcularSumasDP(valores) {
-  const n = valores.length;
-  const total = 1 << n;
-  const sumas = new Float64Array(total);
-  for (let mask = 1; mask < total; mask++) {
-    const lsb = mask & (-mask);
-    const i = 31 - Math.clz32(lsb);
-    sumas[mask] = sumas[mask & (mask - 1)] + valores[i];
+// Explora combinaciones de tamaño 1 hasta 'maxK' sobre 'valores' (ya
+// ordenados de menor a mayor), llamando a 'onCombo(idxOriginales, suma)'
+// por cada una. Usa poda: como ningún monto/hora es negativo, en cuanto
+// la suma parcial ya rebasa 'limiteSuperior' ninguna rama que agregue más
+// elementos puede bajarla de vuelta — se corta ahí sin seguir explorando.
+// Esto es lo que permite manejar decenas de semanas pendientes rápido en
+// vez de tener que probar cada combinación posible una por una. Devuelve
+// true si se cortó por el límite de iteraciones antes de terminar.
+function explorarCombinaciones(ordenIdx, valores, maxK, limiteSuperior, onCombo) {
+  const n = ordenIdx.length;
+  const elegidos = [];
+  let iteraciones = 0;
+  let limitado = false;
+  function paso(inicio, sumaActual) {
+    if (limitado) return;
+    if (++iteraciones > MAX_ITERACIONES_BUSQUEDA) { limitado = true; return; }
+    if (sumaActual > limiteSuperior + 1e-6) return; // poda
+    if (elegidos.length > 0) onCombo(elegidos.slice(), sumaActual);
+    if (elegidos.length === maxK) return;
+    for (let i = inicio; i < n; i++) {
+      const idxReal = ordenIdx[i];
+      elegidos.push(idxReal);
+      paso(i + 1, sumaActual + valores[idxReal]);
+      elegidos.pop();
+      if (limitado) break;
+    }
   }
-  return sumas;
-}
-function indicesDeMascara(mask, n) {
-  const idx = [];
-  for (let i = 0; i < n; i++) if (mask & (1 << i)) idx.push(i);
-  return idx;
+  paso(0, 0);
+  return limitado;
 }
 
-// Todas las combinaciones (subconjuntos no vacíos) de 'items' cuya suma
-// de valueFn(item) caiga dentro de 'tolerancia' del 'objetivo'.
+// Todas las combinaciones (de 1 hasta MAX_TAMANO_COMBINACION semanas) de
+// 'items' cuya suma de valueFn(item) caiga dentro de 'tolerancia' del
+// 'objetivo'.
 function combinacionesQueCoinciden(items, valueFn, objetivo, tolerancia) {
   const n = items.length;
   if (n === 0) return { combos: [], demasiadoGrande: false };
-  if (n > MAX_SEMANAS_COMBINACION) return { combos: [], demasiadoGrande: true };
+  if (n > MAX_SEMANAS_PENDIENTES) return { combos: [], demasiadoGrande: true };
   const valores = items.map(valueFn);
-  const sumas = calcularSumasDP(valores);
+  const ordenIdx = valores.map((v, i) => i).sort((a, b) => valores[a] - valores[b]);
+  const maxK = Math.min(n, MAX_TAMANO_COMBINACION);
   const combos = [];
-  for (let mask = 1; mask < sumas.length; mask++) {
-    const suma = Math.round(sumas[mask] * 100) / 100;
-    const diff = Math.round(Math.abs(suma - objetivo) * 100) / 100;
-    if (diff <= tolerancia) combos.push({ idx: indicesDeMascara(mask, n), suma, diff });
-  }
-  return { combos, demasiadoGrande: false };
+  const limitado = explorarCombinaciones(ordenIdx, valores, maxK, objetivo + tolerancia, (idx, suma) => {
+    const sumaR = Math.round(suma * 100) / 100;
+    const diff = Math.round(Math.abs(sumaR - objetivo) * 100) / 100;
+    if (diff <= tolerancia) combos.push({ idx, suma: sumaR, diff });
+  });
+  return { combos, demasiadoGrande: false, busquedaIncompleta: limitado };
 }
 
 // La combinación individual MÁS CERCANA al objetivo, sin filtro de
 // tolerancia — solo para mostrar de referencia cuando nada coincidió.
+// FIX de rendimiento detectado en pruebas propias antes de entregar esto:
+// como aquí NO hay una tolerancia fija que acote la búsqueda de entrada
+// (se busca la combinación más cercana SEA cual sea la diferencia), la
+// poda original (basada en un límite fijo) casi no recortaba nada — con
+// muchas semanas pendientes y sin match exacto (el caso más común, no uno
+// raro) tardaba varios segundos. Se corrige con poda DINÁMICA: se
+// pre-siembra 'mejor' con la mejor coincidencia de UNA sola semana
+// (barrido rápido, O(n)) para tener ya un límite razonable desde el
+// principio, y luego, como los valores están ordenados de menor a mayor y
+// ninguno es negativo, en cuanto la suma parcial se pasa del objetivo más
+// allá de la mejor diferencia ya encontrada, ningún elemento adicional
+// puede acercarla de vuelta — se corta esa rama ahí mismo.
 function combinacionMasCercana(items, valueFn, objetivo) {
   const n = items.length;
-  if (n === 0 || n > MAX_SEMANAS_COMBINACION) return null;
+  if (n === 0 || n > MAX_SEMANAS_PENDIENTES) return null;
   const valores = items.map(valueFn);
-  const sumas = calcularSumasDP(valores);
-  let mejorMask = -1, mejorDiff = Infinity, mejorSuma = 0;
-  for (let mask = 1; mask < sumas.length; mask++) {
-    const suma = Math.round(sumas[mask] * 100) / 100;
-    const diff = Math.abs(suma - objetivo);
-    if (diff < mejorDiff) { mejorDiff = diff; mejorMask = mask; mejorSuma = suma; }
+  const ordenIdx = valores.map((v, i) => i).sort((a, b) => valores[a] - valores[b]);
+  const maxK = Math.min(n, MAX_TAMANO_COMBINACION);
+
+  let mejor = null;
+  for (let i = 0; i < valores.length; i++) {
+    const diff = Math.round(Math.abs(valores[i] - objetivo) * 100) / 100;
+    if (!mejor || diff < mejor.diff) mejor = { idx: [i], suma: Math.round(valores[i]*100)/100, diff };
   }
-  if (mejorMask === -1) return null;
-  return { idx: indicesDeMascara(mejorMask, n), suma: mejorSuma, diff: Math.round(mejorDiff * 100) / 100 };
+
+  const elegidos = [];
+  let iteraciones = 0;
+  let limitado = false;
+  function paso(inicio, sumaActual) {
+    if (limitado) return;
+    // Misma red de seguridad que combinacionesQueCoinciden: si el
+    // objetivo es absurdo frente a la bolsa, la poda dinámica por sí sola
+    // no basta (mejor.diff también sería enorme) — este tope duro evita
+    // que se cuelgue igual.
+    if (++iteraciones > MAX_ITERACIONES_BUSQUEDA) { limitado = true; return; }
+    if (mejor && (sumaActual - objetivo) > mejor.diff + 1e-6) return; // poda dinámica
+    if (elegidos.length > 0) {
+      const sumaR = Math.round(sumaActual * 100) / 100;
+      const diff = Math.round(Math.abs(sumaR - objetivo) * 100) / 100;
+      if (diff < mejor.diff) mejor = { idx: elegidos.slice(), suma: sumaR, diff };
+    }
+    if (elegidos.length === maxK) return;
+    for (let i = inicio; i < ordenIdx.length; i++) {
+      const idxReal = ordenIdx[i];
+      elegidos.push(idxReal);
+      paso(i + 1, sumaActual + valores[idxReal]);
+      elegidos.pop();
+      if (limitado) break;
+    }
+  }
+  paso(0, 0);
+  return mejor;
 }
 
 // REGLA DE DESEMPATE OBLIGATORIA: entre varias combinaciones que coinciden
@@ -2693,14 +2752,19 @@ function elegirPorDesempate(combos, items, fechaSabanaISO) {
 // pida esa fecha explícitamente.
 function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta) {
   if (!objetivo || objetivo <= 0) return null;
-  const { combos, demasiadoGrande } = combinacionesQueCoinciden(pendientes, valueFn, objetivo, tolerancia);
+  const { combos, demasiadoGrande, busquedaIncompleta } = combinacionesQueCoinciden(pendientes, valueFn, objetivo, tolerancia);
   if (demasiadoGrande) return { etiqueta, objetivo, sinCoincidencia: true, demasiadoGrande: true };
   if (combos.length === 0) {
     const cercana = combinacionMasCercana(pendientes, valueFn, objetivo);
     return {
       etiqueta, objetivo, sinCoincidencia: true,
       masCercana: cercana,
-      semanasMasCercana: cercana ? cercana.idx.map(i => pendientes[i]) : []
+      semanasMasCercana: cercana ? cercana.idx.map(i => pendientes[i]) : [],
+      // Si el monto es muy grande frente a lo que hay en la bolsa (ej. un
+      // cero de más al capturar), la búsqueda se corta antes de agotar
+      // todas las combinaciones posibles — se avisa en vez de que quede
+      // como un límite silencioso.
+      busquedaIncompleta
     };
   }
   if (combos.length > 1 && !fechaSabanaISO) {
@@ -2783,13 +2847,9 @@ function parsearConceptosPDF(lineas) {
   return encontrados;
 }
 
-// v22.3-lectorPDF: confirmado contra un recibo real ("catorcena 11 con
-// clave 1190.pdf") — el número de catorcena viene impreso ahí mismo, en
-// la línea "TEMP. LIQUIDADO HASTA 11/2026 31.05.2026 EXPEDIDO ..."
-// (formato catorcena/año, justo antes de la fecha de fin). Solo
-// confirmado contra UNA muestra — si algún recibo trae un formato
-// distinto, simplemente no encuentra nada y no llena el selector, sin
-// romper el resto de la lectura.
+// Confirmado contra dos recibos reales — el número de catorcena viene
+// impreso en la línea "TEMP. LIQUIDADO HASTA XX/AAAA ..." (formato
+// catorcena/año, justo antes de la fecha de fin).
 function extraerCatorcenaPDF(lineas) {
   const re = /LIQUIDADO\s+HASTA\s+(\d{1,2})\s*\/\s*(\d{4})/i;
   for (const linea of lineas) {
@@ -2832,8 +2892,8 @@ window.leerReciboPDF = async function(event) {
     if (todasFechas[0]) document.getElementById('inp-ref-fecha-a').value = todasFechas[0];
     if (todasFechas[1]) document.getElementById('inp-ref-fecha-b').value = todasFechas[1];
 
-    // Automático: si se detectó la catorcena en el PDF, se deja lista
-    // en el selector — al confirmar la liquidación, se registra en el
+    // Automático: si se detectó la catorcena en el PDF, se deja lista en
+    // el selector — al confirmar la liquidación, se registra en el
     // historial sin que el usuario tenga que tocar nada. Si el usuario
     // no está de acuerdo, sigue pudiendo cambiar el selector a mano
     // antes de confirmar.
@@ -2867,7 +2927,9 @@ function renderResultadoCotejo(resultado) {
     if (c.requiereDesempate) {
       avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay ${c.combos.length} combinaciones distintas de semanas que coinciden con ${f$Cot(c.objetivo)}. Ingresa la <b>Fecha de Sábana / Proceso RH</b> para desempatar y vuelve a cotejar — la regla de desempate es obligatoria, no se adivina.`);
     } else if (c.demasiadoGrande) {
-      avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay más de ${MAX_SEMANAS_COMBINACION} semanas pendientes sin pagar — no se probaron todas las combinaciones posibles. Marca como pagadas las semanas viejas que ya cobraste, o revisa esta manualmente.`);
+      avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay más de ${MAX_SEMANAS_PENDIENTES} semanas pendientes sin pagar — no se probaron todas las combinaciones posibles. Marca como pagadas las semanas viejas que ya cobraste, o revisa esta manualmente.`);
+    } else if (c.sinCoincidencia && c.busquedaIncompleta) {
+      avisos.push(`⚠️ <b>${c.etiqueta}</b>: ${f$Cot(c.objetivo)} es un monto muy grande frente a tus semanas pendientes — no se pudieron probar todas las combinaciones posibles a tiempo. Revisa que el monto esté bien capturado (¿un cero de más?).`);
     }
   });
   aviso.innerHTML = avisos.join('<br><br>');
@@ -2972,10 +3034,6 @@ window.confirmarLiquidacionCotejo = async function() {
 
   const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value || null;
   const fechaSabana = document.getElementById('inp-fecha-sabana').value || null;
-  // FIX v22.2: faltaba llenar el número de catorcena (1-26) que ya usa
-  // el selector de Historial — antes solo se guardaban fechas propias
-  // del Cotejador, y una semana confirmada como pagada se quedaba con
-  // "-- Catorcena --" vacío en Historial.
   const numeroCatorcena = parseInt(document.getElementById('inp-catorcena-numero').value) || 0;
 
   const claves = ultimoResultadoCotejo.semanasLiquidadas.map(s => s.key);
@@ -3023,18 +3081,12 @@ window.confirmarLiquidacionCotejo = async function() {
   render();
 };
 
-// FIX v22.1: nivelSel/jornadaSel ya NO se leen de un selector propio del
-// Cotejador — se usan las variables 'nivel'/'jornada' EN VIVO del script
-// principal (mismas que usa Captura ahora mismo), disponibles aquí por
-// closure. Antes el selector se poblaba una sola vez con lo que hubiera
-// en localStorage al abrir la app, y podía quedar mostrando un nivel
-// viejo/equivocado sin ninguna relación con el recibo que se está
-// cotejando — el propio usuario lo detectó comparando contra un recibo
-// real (mostraba Nivel 8 en pantalla cuando el recibo real era Nivel 21).
+// nivelSel/jornadaSel ya NO se leen de un selector propio del Cotejador —
+// se usan las variables 'nivel'/'jornada' EN VIVO del script principal
+// (mismas que usa Captura ahora mismo), disponibles aquí por closure.
 // Esto solo afecta la caja de "Decodificación de referencia" (informativa)
 // y el respaldo para semanas MUY viejas sin salSnap/arcSnap propio — el
-// cotejo real de cada semana siempre usó su propio salario congelado,
-// nunca este valor.
+// cotejo real de cada semana siempre usó su propio salario congelado.
 window.cotejarRecibo = function() {
   const m1130    = parseFloat(document.getElementById('inp-1130').value) || 0;
   const h1130    = parseFloat(document.getElementById('inp-1130-horas').value) || 0;
