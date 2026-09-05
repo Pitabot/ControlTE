@@ -915,7 +915,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv22.6-sinFiltroRezago.html';
+const VERSION_ARCHIVO = 'controlTEv22.7-fixLectorPDFStale.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -2825,6 +2825,25 @@ window.leerReciboPDF = async function(event) {
   const status = document.getElementById('pdf-status');
   if (!file) return;
   status.textContent = '⏳ Leyendo PDF…';
+
+  // FIX v22.7 (bug real, confirmado por el usuario con recibos reales de
+  // catorcena 3 y 10): antes, un campo solo se llenaba si esa clave SÍ
+  // aparecía en el PDF actual — si no aparecía (ej. un recibo sin nada de
+  // tiempo extra), el campo se quedaba con el monto del recibo ANTERIOR
+  // que se hubiera probado, sin limpiar. Eso hacía que el Cotejador
+  // buscara y confirmara semanas con montos de OTRO recibo, bajo la
+  // catorcena correcta del recibo actual (falso positivo: semana 1, 2, 5
+  // y 19 terminaron marcadas "pagadas" en catorcena 10/3, que en realidad
+  // no pagaron nada de TE) — y al revés, un campo a medio actualizar podía
+  // hacer que una búsqueda válida no encontrara nada (falso negativo).
+  // Ahora se limpian TODOS los campos que este lector puede llenar antes
+  // de leer el PDF nuevo, para que nunca quede un dato de un recibo previo.
+  ['inp-1130','inp-1130-horas','inp-1140','inp-1180','inp-1190','inp-1430',
+   'inp-ref-fecha-a','inp-ref-fecha-b'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+
   try {
     const lineas = await extraerLineasPDF(file);
     const encontrados = parsearConceptosPDF(lineas);
