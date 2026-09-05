@@ -387,7 +387,7 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 .badge-match.err { background: rgba(181,43,39,.12); color: #b52b27; }
 .no-historial { padding: 20px; text-align: center; font-size: 12px; color: var(--mid); }
 .tol-note { background: var(--rule); border-radius: 7px; padding: 10px 14px; font-size: 11px; color: var(--mid); line-height: 1.6; margin-top: 14px; }
-/* v22.0-lectorPDF — chips de checklist por concepto en el motor de
+/* v22.0/22.1-lectorPDF — chips de checklist por concepto en el motor de
    combinaciones del Cotejador, y estado del lector de PDF. */
 .concepto-chip { display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; margin:2px 3px 2px 0; }
 .concepto-chip.ok { background:#e6f5ec; color:#2a6e3f; }
@@ -659,25 +659,48 @@ body.plan-free #scards { display: none !important; }
           <span class="hint">Solo hace falta llenarla si la app encuentra más de una semana posible para el mismo pago</span>
         </div>
       </div>
+      <!-- FIX v22.2: faltaba este campo — confirmarLiquidacionCotejo()
+           marcaba pagado=true pero nunca llenaba 'catorcena' (el número
+           1-26 que usa el selector de Historial), así que las semanas
+           quedaban en verde "PAGADO" pero con "-- Catorcena --" vacío. -->
+      <div class="input-grid">
+        <div class="field">
+          <label>Número de catorcena (opcional)</label>
+          <select id="inp-catorcena-numero">
+            <option value="0">-- Catorcena --</option>
+            <option value="1">Catorcena 01</option><option value="2">Catorcena 02</option>
+            <option value="3">Catorcena 03</option><option value="4">Catorcena 04</option>
+            <option value="5">Catorcena 05</option><option value="6">Catorcena 06</option>
+            <option value="7">Catorcena 07</option><option value="8">Catorcena 08</option>
+            <option value="9">Catorcena 09</option><option value="10">Catorcena 10</option>
+            <option value="11">Catorcena 11</option><option value="12">Catorcena 12</option>
+            <option value="13">Catorcena 13</option><option value="14">Catorcena 14</option>
+            <option value="15">Catorcena 15</option><option value="16">Catorcena 16</option>
+            <option value="17">Catorcena 17</option><option value="18">Catorcena 18</option>
+            <option value="19">Catorcena 19</option><option value="20">Catorcena 20</option>
+            <option value="21">Catorcena 21</option><option value="22">Catorcena 22</option>
+            <option value="23">Catorcena 23</option><option value="24">Catorcena 24</option>
+            <option value="25">Catorcena 25</option><option value="26">Catorcena 26</option>
+          </select>
+          <span class="hint">Si subiste el PDF arriba, se llena sola automáticamente. Solo tienes que elegirla a mano si capturaste los montos tú mismo, sin PDF.</span>
+        </div>
+      </div>
     </div>
 
     <div class="sec-lbl">Conceptos depositados en el recibo</div>
     <div class="card">
-      <div class="input-grid">
-        <div class="field">
-          <label>Nivel (referencia)</label>
-          <select id="inp-nivel"></select>
-        </div>
-        <div class="field">
-          <label>Jornada (referencia)</label>
-          <select id="inp-jornada">
-            <option value="00">Jornada 00 — Lunes a Viernes</option>
-            <option value="04">Jornada 04 — Turno discontinuo</option>
-            <option value="07">Jornada 07 — 6 días</option>
-          </select>
-        </div>
-      </div>
-
+      <!-- FIX v22.1: se quitaron los selectores de Nivel/Jornada "de
+           referencia" — se llenaban con lo último guardado en este
+           teléfono (localStorage), no con lo que dice el recibo, y podían
+           mostrar un nivel completamente distinto al del PDF (ej. Nivel 8
+           en pantalla cuando el recibo real era Nivel 21). El cotejo real
+           NUNCA los necesitó: cada semana pendiente ya trae su propio
+           nivel/salario congelado (sd.salSnap/arcSnap) desde que se
+           capturó, que es la fuente de verdad correcta — no un selector
+           aparte que se puede desincronizar. Ahora se usa directo el
+           nivel/jornada ACTUAL y en vivo de la cuenta (variables 'nivel'/
+           'jornada' del script principal) solo como referencia de
+           respaldo para semanas viejas sin snapshot. -->
       <div class="input-grid">
         <div class="field">
           <label>Fecha REFERENCIA del recibo — semana A (opcional)</label>
@@ -847,7 +870,7 @@ body.plan-free #scards { display: none !important; }
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<!-- v22.0-lectorPDF: lee el PDF del recibo directo en el teléfono, sin
+<!-- v22-lectorPDF: lee el PDF del recibo directo en el teléfono, sin
      mandarlo a ningún servidor. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
@@ -908,7 +931,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv22.0-lectorPDF.html';
+const VERSION_ARCHIVO = 'controlTEv22.3-lectorPDF.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -2520,7 +2543,7 @@ const f$Cot = n => '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, max
 const fDateCot = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX', {day:'2-digit', month:'short', year:'numeric'});
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// v22.0-lectorPDF — MOTOR DE COMBINACIONES DE SEMANAS PENDIENTES
+// v22.0/22.1-lectorPDF — MOTOR DE COMBINACIONES DE SEMANAS PENDIENTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Reemplaza el cotejo viejo (que solo comparaba, semana por semana, las
 // más CERCANAS EN FECHA al recibo) por una búsqueda real de qué semana o
@@ -2551,7 +2574,7 @@ function excluirSemanasImplausibles(pendientes, fechaAncla) {
 
 // Bolsa de TODAS las semanas pendientes de cobro, sin filtrar por fecha.
 // Usa el salario/ARC histórico congelado de cada semana (sd.salSnap/
-// arcSnap, vía calcSemanaCot) — nunca el nivel actual del trabajador.
+// arcSnap, vía calcSemanaCot) — nunca un nivel seleccionado a mano.
 function obtenerSemanasPendientesCot(nivelFallback) {
   const lista = [];
   Object.keys(datos).forEach(key => {
@@ -2760,6 +2783,25 @@ function parsearConceptosPDF(lineas) {
   return encontrados;
 }
 
+// v22.3-lectorPDF: confirmado contra un recibo real ("catorcena 11 con
+// clave 1190.pdf") — el número de catorcena viene impreso ahí mismo, en
+// la línea "TEMP. LIQUIDADO HASTA 11/2026 31.05.2026 EXPEDIDO ..."
+// (formato catorcena/año, justo antes de la fecha de fin). Solo
+// confirmado contra UNA muestra — si algún recibo trae un formato
+// distinto, simplemente no encuentra nada y no llena el selector, sin
+// romper el resto de la lectura.
+function extraerCatorcenaPDF(lineas) {
+  const re = /LIQUIDADO\s+HASTA\s+(\d{1,2})\s*\/\s*(\d{4})/i;
+  for (const linea of lineas) {
+    const m = linea.match(re);
+    if (m) {
+      const num = parseInt(m[1]);
+      if (num >= 1 && num <= 26) return num;
+    }
+  }
+  return null;
+}
+
 window.leerReciboPDF = async function(event) {
   const file = event.target.files && event.target.files[0];
   const status = document.getElementById('pdf-status');
@@ -2769,8 +2811,9 @@ window.leerReciboPDF = async function(event) {
     const lineas = await extraerLineasPDF(file);
     const encontrados = parsearConceptosPDF(lineas);
     const totalLineas = Object.values(encontrados).reduce((s, arr) => s + arr.length, 0);
+    const catorcenaDetectada = extraerCatorcenaPDF(lineas);
 
-    if (totalLineas === 0) {
+    if (totalLineas === 0 && !catorcenaDetectada) {
       status.innerHTML = '⚠️ No se encontró ninguna línea de tiempo extra/insalubridad reconocible en este PDF. Puede ser una imagen escaneada (sin texto real adentro) o un formato distinto — ingresa los datos a mano.';
       return;
     }
@@ -2789,7 +2832,18 @@ window.leerReciboPDF = async function(event) {
     if (todasFechas[0]) document.getElementById('inp-ref-fecha-a').value = todasFechas[0];
     if (todasFechas[1]) document.getElementById('inp-ref-fecha-b').value = todasFechas[1];
 
-    status.innerHTML = `✅ Se leyeron ${totalLineas} línea(s) del recibo y se llenaron los campos de abajo. <b>Revísalos</b> antes de darle "Buscar y cotejar" — el formato del PDF puede variar y no siempre se lee perfecto.`;
+    // Automático: si se detectó la catorcena en el PDF, se deja lista
+    // en el selector — al confirmar la liquidación, se registra en el
+    // historial sin que el usuario tenga que tocar nada. Si el usuario
+    // no está de acuerdo, sigue pudiendo cambiar el selector a mano
+    // antes de confirmar.
+    let notaCatorcena = '';
+    if (catorcenaDetectada) {
+      document.getElementById('inp-catorcena-numero').value = String(catorcenaDetectada);
+      notaCatorcena = ` Catorcena detectada automáticamente: <b>${String(catorcenaDetectada).padStart(2,'0')}</b>.`;
+    }
+
+    status.innerHTML = `✅ Se leyeron ${totalLineas} línea(s) del recibo y se llenaron los campos de abajo.${notaCatorcena} <b>Revísalos</b> antes de darle "Buscar y cotejar" — el formato del PDF puede variar y no siempre se lee perfecto.`;
   } catch (e) {
     console.error('leerReciboPDF() falló:', e);
     status.innerHTML = '❌ No se pudo leer este PDF. Ingresa los datos a mano.';
@@ -2918,12 +2972,18 @@ window.confirmarLiquidacionCotejo = async function() {
 
   const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value || null;
   const fechaSabana = document.getElementById('inp-fecha-sabana').value || null;
+  // FIX v22.2: faltaba llenar el número de catorcena (1-26) que ya usa
+  // el selector de Historial — antes solo se guardaban fechas propias
+  // del Cotejador, y una semana confirmada como pagada se quedaba con
+  // "-- Catorcena --" vacío en Historial.
+  const numeroCatorcena = parseInt(document.getElementById('inp-catorcena-numero').value) || 0;
 
   const claves = ultimoResultadoCotejo.semanasLiquidadas.map(s => s.key);
   claves.forEach(key => {
     const sd = datos[key];
     if (!sd) return;
     sd.pagado = true;
+    if (numeroCatorcena > 0) sd.catorcena = numeroCatorcena;
     // Namespaced aparte de 'catorcena' (número 1-26 que ya usa el
     // selector de Historial) para no pisar ese campo existente con
     // semántica distinta.
@@ -2963,8 +3023,19 @@ window.confirmarLiquidacionCotejo = async function() {
   render();
 };
 
+// FIX v22.1: nivelSel/jornadaSel ya NO se leen de un selector propio del
+// Cotejador — se usan las variables 'nivel'/'jornada' EN VIVO del script
+// principal (mismas que usa Captura ahora mismo), disponibles aquí por
+// closure. Antes el selector se poblaba una sola vez con lo que hubiera
+// en localStorage al abrir la app, y podía quedar mostrando un nivel
+// viejo/equivocado sin ninguna relación con el recibo que se está
+// cotejando — el propio usuario lo detectó comparando contra un recibo
+// real (mostraba Nivel 8 en pantalla cuando el recibo real era Nivel 21).
+// Esto solo afecta la caja de "Decodificación de referencia" (informativa)
+// y el respaldo para semanas MUY viejas sin salSnap/arcSnap propio — el
+// cotejo real de cada semana siempre usó su propio salario congelado,
+// nunca este valor.
 window.cotejarRecibo = function() {
-  const nivelSel = parseInt(document.getElementById('inp-nivel').value);
   const m1130    = parseFloat(document.getElementById('inp-1130').value) || 0;
   const h1130    = parseFloat(document.getElementById('inp-1130-horas').value) || 0;
   const m1140    = parseFloat(document.getElementById('inp-1140').value) || 0;
@@ -2990,12 +3061,12 @@ window.cotejarRecibo = function() {
     return;
   }
 
-  // Decodificación de referencia (informativa — usa el nivel seleccionado
-  // arriba, no el histórico de cada semana).
-  const dec = decodificar(nivelSel, m1130, m1140, m1180, m1190);
+  // Decodificación de referencia (informativa) — usa el nivel EN VIVO de
+  // la cuenta (variable 'nivel' del script principal), no un selector.
+  const dec = decodificar(nivel, m1130, m1140, m1180, m1190);
 
   document.getElementById('res-header').textContent =
-    `Decodificación de referencia · Nivel ${nivelSel} · Tasa hora TE: ${f$Cot(dec.tasa_hora)}`;
+    `Decodificación de referencia · Nivel ${nivel} (actual de tu cuenta) · Tasa hora TE: ${f$Cot(dec.tasa_hora)}`;
 
   const dg = document.getElementById('decode-grid');
   dg.innerHTML = `
@@ -3041,7 +3112,7 @@ window.cotejarRecibo = function() {
   else { tolNote.style.display = 'none'; }
 
   const fechaAncla = fechaSabana || fechaCatorcena;
-  const pendientes = excluirSemanasImplausibles(obtenerSemanasPendientesCot(nivelSel), fechaAncla);
+  const pendientes = excluirSemanasImplausibles(obtenerSemanasPendientesCot(nivel), fechaAncla);
   const pendientesRef = pendientesCercaDeReferencia(pendientes, [fechaRefA, fechaRefB]);
   const conceptos = [];
 
@@ -3082,17 +3153,6 @@ window.cotejarRecibo = function() {
   document.getElementById('resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
-// Poblar selector de nivel del Cotejador
-const selCot = document.getElementById('inp-nivel');
-const nivelGuardadoCot = parseInt(localStorage.getItem('cte_nivel') || 21);
-Object.keys(TAB).sort((a,b) => a-b).forEach(n => {
-  const o = document.createElement('option');
-  o.value = n;
-  o.textContent = `Nivel ${n}  —  $${TAB[n].toFixed(2)}/día`;
-  if (parseInt(n) === nivelGuardadoCot) o.selected = true;
-  selCot.appendChild(o);
-});
-document.getElementById('inp-jornada').value = localStorage.getItem('cte_jornada') || '00';
 document.getElementById('inp-fecha-catorcena').value = new Date().toISOString().slice(0, 10);
 
 })();
