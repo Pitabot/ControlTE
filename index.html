@@ -387,8 +387,8 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 .badge-match.err { background: rgba(181,43,39,.12); color: #b52b27; }
 .no-historial { padding: 20px; text-align: center; font-size: 12px; color: var(--mid); }
 .tol-note { background: var(--rule); border-radius: 7px; padding: 10px 14px; font-size: 11px; color: var(--mid); line-height: 1.6; margin-top: 14px; }
-/* v21.0fixCotejador — chips de checklist por concepto en el nuevo motor
-   de combinaciones. */
+/* v22.0-lectorPDF — chips de checklist por concepto en el motor de
+   combinaciones del Cotejador, y estado del lector de PDF. */
 .concepto-chip { display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; margin:2px 3px 2px 0; }
 .concepto-chip.ok { background:#e6f5ec; color:#2a6e3f; }
 .concepto-chip.falta { background:#fdecea; color:#b52b27; text-decoration: line-through; opacity:.75; }
@@ -631,22 +631,23 @@ body.plan-free #scards { display: none !important; }
   <!-- ═══ COTEJADOR ═══ -->
   <div id="tab-cotejador" class="tab-pane">
     <div class="instruccion">
-      <strong>¿Cómo funciona?</strong> Escribe los pesos que ves en tu recibo junto a cada clave
-      (1130, 1140, 1180, 1190) y presiona "Buscar y cotejar". La app revisa tu historial guardado
-      y te dice exactamente cuál semana (o semanas) fue la que te pagaron — sin importar qué tan
-      vieja sea esa semana. Si encuentra más de una semana que podría ser la correcta, te va a
-      pedir una fecha más de tu recibo (la <b>Fecha de Sábana / Proceso RH</b>) para decidir cuál es —
-      así no adivina.
+      <strong>¿Cómo funciona?</strong> Sube el PDF de tu recibo (se lee en tu propio teléfono, no se
+      manda a ningún servidor) o escribe los pesos a mano junto a cada clave, y presiona
+      "Buscar y cotejar". La app revisa tu historial guardado y te dice exactamente cuál semana
+      (o semanas) fue la que te pagaron — sin importar qué tan vieja sea. Si encuentra más de una
+      semana que podría ser la correcta, te va a pedir la <b>Fecha de Sábana / Proceso RH</b> para
+      decidir cuál es — así no adivina.
+    </div>
+
+    <div class="sec-lbl">Leer recibo automáticamente (opcional)</div>
+    <div class="card">
+      <input type="file" id="inp-pdf-recibo" accept="application/pdf" onchange="leerReciboPDF(event)">
+      <div id="pdf-status" style="font-size:12px;color:var(--mid);margin-top:10px;line-height:1.6;"></div>
     </div>
 
     <div class="sec-lbl">Fechas de control</div>
     <div class="card">
-      <div class="input-grid three">
-        <div class="field">
-          <label>Fecha de Depósito</label>
-          <input type="date" id="inp-fecha-deposito">
-          <span class="hint">Cuándo cayó el dinero en tu cuenta</span>
-        </div>
+      <div class="input-grid">
         <div class="field">
           <label>Catorcena del recibo</label>
           <input type="date" id="inp-fecha-catorcena">
@@ -681,7 +682,7 @@ body.plan-free #scards { display: none !important; }
         <div class="field">
           <label>Fecha REFERENCIA del recibo — semana A (opcional)</label>
           <input type="date" id="inp-ref-fecha-a">
-          <span class="hint">Cópiala de la columna REFERENCIA junto a la clave 1130/1140/1180/1190 en tu recibo real</span>
+          <span class="hint">Cópiala de la columna REFERENCIA junto a la clave 1130/1140/1180/1190 en tu recibo real (el lector de PDF la llena sola)</span>
         </div>
         <div class="field">
           <label>Fecha REFERENCIA del recibo — semana B (opcional)</label>
@@ -846,6 +847,12 @@ body.plan-free #scards { display: none !important; }
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<!-- v22.0-lectorPDF: lee el PDF del recibo directo en el teléfono, sin
+     mandarlo a ningún servidor. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+</script>
 
 <script>
 // Muestra el ID de respaldo (getUserKey) en pantalla, sin necesitar consola.
@@ -901,7 +908,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv21.0fixCotejador.html';
+const VERSION_ARCHIVO = 'controlTEv22.0-lectorPDF.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1096,6 +1103,7 @@ function semData(s) {
   }
   return datos[k];
 }
+
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -1104,7 +1112,6 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
-
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
 const db    = firebase.firestore();
@@ -2456,12 +2463,10 @@ function decodificar(niv, m1130, m1140, m1180, m1190) {
   return result;
 }
 
-// v21.0fixCotejador: antes leerHistorialCot() releía y re-parseaba
-// 'cte_v4' de localStorage cada vez — podía quedar desactualizado frente
-// a ediciones ya hechas en memoria (el objeto 'datos' del script
-// principal, disponible aquí por closure) que aún no se habían vuelto a
-// guardar. Se elimina esa función y el motor nuevo usa 'datos'
-// directamente en obtenerSemanasPendientesCot().
+// v22.0-lectorPDF: leerHistorialCot() releía y re-parseaba 'cte_v4' de
+// localStorage cada vez — podía quedar desactualizado frente a ediciones
+// ya hechas en memoria (el objeto 'datos' del script principal, disponible
+// aquí por closure). El motor nuevo usa 'datos' directamente.
 
 // Igual que calcDia() del archivo principal, pero recibe salSnap/arcSnap
 // de la semana (sd.salSnap/sd.arcSnap) en vez de usar el nivel actual —
@@ -2515,27 +2520,22 @@ const f$Cot = n => '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, max
 const fDateCot = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX', {day:'2-digit', month:'short', year:'numeric'});
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// v21.0fixCotejador — MOTOR DE COMBINACIONES DE SEMANAS PENDIENTES
+// v22.0-lectorPDF — MOTOR DE COMBINACIONES DE SEMANAS PENDIENTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Reemplaza el cotejo viejo (que solo comparaba, semana por semana, las
 // más CERCANAS EN FECHA al recibo) por una búsqueda real de qué semana o
 // combinación de semanas PENDIENTES (sd.pagado !== true) explica cada
 // monto del recibo — sin importar qué tan separadas estén en el tiempo.
-// Eso es justo lo que rompía el cotejo con el "descontrol de fechas de
-// RH": un recibo puede liquidar semanas viejas sueltas, o una mezcla de
-// semanas no consecutivas, y comparar solo por cercanía de fecha nunca
-// las iba a encontrar.
 
 // Confirmado por el usuario, de su experiencia real: Recursos Humanos
 // nunca paga de inmediato — jamás en menos de ~4 semanas desde que se
 // trabajó, y por supuesto jamás puede pagar una semana que todavía no ha
 // pasado (no lee el futuro). Es un valor FIJO en el código, no un ajuste
-// que el usuario tenga que manejar en la pantalla — si su experiencia
-// cambia, se le pide a Claude que edite este número, no un campo de la UI.
+// que el usuario tenga que manejar en la pantalla.
 const RH_REZAGO_MINIMO_DIAS = 28; // ~4 semanas
 
 // Descarta como candidatas las semanas que sean implausibles frente a
-// 'fechaAncla' (Fecha de Sábana si se dio, si no Fecha de Depósito):
+// 'fechaAncla' (Fecha de Sábana si se dio, si no Catorcena del recibo):
 // tanto las que caen DESPUÉS de esa fecha (pago de algo que aún no se
 // trabaja — imposible) como las que caen MUY CERCA de ella (pago
 // inmediato — no pasa en la práctica).
@@ -2586,10 +2586,7 @@ function obtenerSemanasPendientesCot(nivelFallback) {
 }
 
 // Límite práctico de semanas a combinar: 2^20 ≈ 1,048,576 subconjuntos es
-// rápido incluso en un celular gama media. Más de 20 semanas pendientes
-// SIN PAGAR a la vez es un caso extremo (casi 5 meses de atraso total) —
-// se avisa en vez de intentar probar todas las combinaciones y colgar el
-// navegador.
+// rápido incluso en un celular gama media.
 const MAX_SEMANAS_COMBINACION = 20;
 
 // DP clásico de subset-sum: sumas[mask] = sumas[mask sin su bit más bajo]
@@ -2648,11 +2645,7 @@ function combinacionMasCercana(items, valueFn, objetivo) {
 
 // REGLA DE DESEMPATE OBLIGATORIA: entre varias combinaciones que coinciden
 // dentro de tolerancia, gana la que esté colectivamente MÁS CERCA de la
-// Fecha de Sábana de RH — nunca la de monto "más exacto". Se suma la
-// distancia en días de CADA semana de la combinación a esa fecha. Si dos
-// combinaciones empatan también en distancia, gana la de menos semanas
-// (la explicación más simple), y si aun así empatan, la de menor
-// diferencia de monto — desempates secundarios, nunca el primero.
+// Fecha de Sábana de RH — nunca la de monto "más exacto".
 function elegirPorDesempate(combos, items, fechaSabanaISO) {
   if (combos.length <= 1) return { elegido: combos[0] || null, huboDesempate: false };
   const fechaSabana = new Date(fechaSabanaISO + 'T12:00');
@@ -2674,8 +2667,7 @@ function elegirPorDesempate(combos, items, fechaSabanaISO) {
 // Orquesta la búsqueda de UN concepto del recibo contra la bolsa de
 // semanas pendientes. Si hay empate y no se dio Fecha de Sábana, NO
 // adivina — regresa requiereDesempate:true para que la UI lo bloquee y
-// pida esa fecha explícitamente (la regla de desempate es OBLIGATORIA,
-// no un criterio opcional).
+// pida esa fecha explícitamente.
 function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta) {
   if (!objetivo || objetivo <= 0) return null;
   const { combos, demasiadoGrande } = combinacionesQueCoinciden(pendientes, valueFn, objetivo, tolerancia);
@@ -2700,16 +2692,13 @@ function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaIS
   };
 }
 
-// v21.0fixCotejador — FIX de contexto real: un recibo de PEMEX de verdad
-// (confirmado contra un recibo físico) trae su propia columna REFERENCIA
-// con una fecha por cada línea de clave 1130/1140/1180/1190 — típicamente
-// 2 fechas por catorcena, una por semana. Si el usuario las captura, se
-// acota la búsqueda a las semanas pendientes cuyo rango [ini,fin]
-// contenga alguna de esas fechas ANTES de probar contra toda la bolsa —
-// mucho más confiable que adivinar a ciegas. Si ninguna combinación
-// dentro de ese subconjunto cumple tolerancia (la fecha de RH no siempre
-// alinea limpio con el cierre de semana de ControlTE), cae de vuelta a la
-// bolsa completa igual que antes.
+// Un recibo de PEMEX de verdad trae su propia columna REFERENCIA con una
+// fecha por cada línea de clave 1130/1140/1180/1190 — típicamente 2
+// fechas por catorcena, una por semana. Si el usuario las capturó (a mano
+// o vía el lector de PDF), se acota la búsqueda a las semanas pendientes
+// cuyo rango [ini,fin] contenga alguna de esas fechas ANTES de probar
+// contra toda la bolsa. Si ninguna combinación ahí cumple tolerancia, cae
+// de vuelta a la bolsa completa.
 function pendientesCercaDeReferencia(pendientes, fechasRefISO) {
   const fechas = fechasRefISO.filter(Boolean).map(f => new Date(f + 'T12:00'));
   if (fechas.length === 0) return null;
@@ -2726,6 +2715,86 @@ function buscarConceptoConReferencia(pendientesTodas, pendientesRef, valueFn, ob
   }
   return buscarConcepto(pendientesTodas, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta);
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LECTOR DE PDF — llena los campos solo, en vez de teclear a mano
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Todo pasa dentro del propio teléfono/navegador — el PDF nunca sale del
+// dispositivo ni se manda a ningún servidor. Usa pdf.js (cargado en el
+// <head>) para leer el texto del PDF, reconstruye las líneas visuales
+// agrupando los fragmentos de texto por su coordenada Y, y busca líneas
+// con el patrón exacto del recibo real de PEMEX: una fecha de 8 dígitos
+// (AAAAMMDD), la clave (1130/1140/1180/1190/1430) y el monto en pesos al
+// final de la línea.
+async function extraerLineasPDF(file) {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const lineas = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const content = await page.getTextContent();
+    const filas = {};
+    content.items.forEach(item => {
+      const y = Math.round(item.transform[5]);
+      if (!filas[y]) filas[y] = [];
+      filas[y].push({ x: item.transform[4], str: item.str });
+    });
+    Object.keys(filas).map(Number).sort((a, b) => b - a).forEach(y => {
+      lineas.push(filas[y].sort((a, b) => a.x - b.x).map(i => i.str).join(' '));
+    });
+  }
+  return lineas;
+}
+
+function parsearConceptosPDF(lineas) {
+  const encontrados = { '1130': [], '1140': [], '1180': [], '1190': [], '1430': [] };
+  const re = /(\d{8})\D+?(1130|1140|1180|1190|1430)\D+?([\d,]+\.\d{2})\s*$/;
+  lineas.forEach(linea => {
+    const m = linea.match(re);
+    if (!m) return;
+    const fechaISO = `${m[1].slice(0,4)}-${m[1].slice(4,6)}-${m[1].slice(6,8)}`;
+    const monto = parseFloat(m[3].replace(/,/g, ''));
+    if (isNaN(monto)) return;
+    encontrados[m[2]].push({ fecha: fechaISO, monto });
+  });
+  return encontrados;
+}
+
+window.leerReciboPDF = async function(event) {
+  const file = event.target.files && event.target.files[0];
+  const status = document.getElementById('pdf-status');
+  if (!file) return;
+  status.textContent = '⏳ Leyendo PDF…';
+  try {
+    const lineas = await extraerLineasPDF(file);
+    const encontrados = parsearConceptosPDF(lineas);
+    const totalLineas = Object.values(encontrados).reduce((s, arr) => s + arr.length, 0);
+
+    if (totalLineas === 0) {
+      status.innerHTML = '⚠️ No se encontró ninguna línea de tiempo extra/insalubridad reconocible en este PDF. Puede ser una imagen escaneada (sin texto real adentro) o un formato distinto — ingresa los datos a mano.';
+      return;
+    }
+
+    const sumar = arr => Math.round(arr.reduce((s, x) => s + x.monto, 0) * 100) / 100;
+    if (encontrados['1130'].length) document.getElementById('inp-1130').value = sumar(encontrados['1130']);
+    if (encontrados['1140'].length) document.getElementById('inp-1140').value = sumar(encontrados['1140']);
+    if (encontrados['1180'].length) document.getElementById('inp-1180').value = sumar(encontrados['1180']);
+    if (encontrados['1190'].length) document.getElementById('inp-1190').value = sumar(encontrados['1190']);
+    if (encontrados['1430'].length) document.getElementById('inp-1430').value = sumar(encontrados['1430']);
+
+    const todasFechas = ['1130','1140','1180','1190']
+      .flatMap(c => encontrados[c].map(x => x.fecha))
+      .filter((f, i, arr) => arr.indexOf(f) === i)
+      .sort();
+    if (todasFechas[0]) document.getElementById('inp-ref-fecha-a').value = todasFechas[0];
+    if (todasFechas[1]) document.getElementById('inp-ref-fecha-b').value = todasFechas[1];
+
+    status.innerHTML = `✅ Se leyeron ${totalLineas} línea(s) del recibo y se llenaron los campos de abajo. <b>Revísalos</b> antes de darle "Buscar y cotejar" — el formato del PDF puede variar y no siempre se lee perfecto.`;
+  } catch (e) {
+    console.error('leerReciboPDF() falló:', e);
+    status.innerHTML = '❌ No se pudo leer este PDF. Ingresa los datos a mano.';
+  }
+};
 
 // Resultado del último cotejo — lo usa confirmarLiquidacionCotejo() para
 // saber exactamente qué semanas marcar como pagadas sin tener que
@@ -2752,8 +2821,6 @@ function renderResultadoCotejo(resultado) {
 
   const conceptosResueltos = resultado.conceptos.filter(c => !c.requiereDesempate && !c.demasiadoGrande);
 
-  // Unión de semanas tocadas por el recibo, con checklist de qué
-  // concepto(s) explicaron cada una.
   const porSemana = {};
   conceptosResueltos.forEach(c => {
     if (c.sinCoincidencia) return;
@@ -2764,7 +2831,7 @@ function renderResultadoCotejo(resultado) {
   });
   Object.values(porSemana).forEach(entry => {
     conceptosResueltos.forEach(c => {
-      if (c.sinCoincidencia) return; // ya se reporta aparte, no ensucia el checklist
+      if (c.sinCoincidencia) return;
       const incluida = c.semanas.some(s => s.key === entry.semana.key);
       if (!incluida) entry.conceptosFaltantes.push(c.etiqueta);
     });
@@ -2849,7 +2916,6 @@ window.confirmarLiquidacionCotejo = async function() {
   btn.disabled = true;
   btn.textContent = 'Guardando…';
 
-  const fechaDeposito = document.getElementById('inp-fecha-deposito').value || null;
   const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value || null;
   const fechaSabana = document.getElementById('inp-fecha-sabana').value || null;
 
@@ -2860,8 +2926,7 @@ window.confirmarLiquidacionCotejo = async function() {
     sd.pagado = true;
     // Namespaced aparte de 'catorcena' (número 1-26 que ya usa el
     // selector de Historial) para no pisar ese campo existente con
-    // semántica distinta — estas 3 son las fechas de control del recibo.
-    sd.reciboFechaDeposito = fechaDeposito;
+    // semántica distinta.
     sd.reciboFechaCatorcena = fechaCatorcena;
     sd.reciboFechaSabana = fechaSabana;
   });
@@ -2905,28 +2970,28 @@ window.cotejarRecibo = function() {
   const m1140    = parseFloat(document.getElementById('inp-1140').value) || 0;
   const m1180    = parseFloat(document.getElementById('inp-1180').value) || 0;
   const m1190    = parseFloat(document.getElementById('inp-1190').value) || 0;
-  // v21.0fixCotejador: 1430 (insalubridad/peligrosidad) y arrastre ya NO
-  // se buscan por combinación — confirmado contra el CCT real (Cláusulas
-  // 63/64 para 1430: depende de la actividad específica ejecutada y de
-  // la Forma 7 Pemex 12-44; Cláusula 193 para arrastre: es una categoría
-  // de tiempo extra exclusiva de personal de TURNO CONTINUO, con fórmula
-  // de factor 7.33 distinta a la de jornada 00/04/07). ControlTE no
-  // captura ninguno de los dos datos, así que fingir un cotejo automático
-  // sería inventar un número, no verificarlo. Se muestran solo de
-  // referencia.
+  // 1430 (insalubridad/peligrosidad) y arrastre NO se buscan por
+  // combinación — confirmado contra el CCT real (Cláusulas 63/64 para
+  // 1430: depende de la actividad específica ejecutada y de la Forma 7
+  // Pemex 12-44; Cláusula 193 para arrastre: categoría de tiempo extra
+  // exclusiva de personal de TURNO CONTINUO, fórmula de factor 7.33
+  // distinta a la de jornada 00/04/07). ControlTE no captura ninguno de
+  // los dos datos, así que fingir un cotejo automático sería inventar un
+  // número, no verificarlo. Se muestran solo de referencia.
   const m1430      = parseFloat(document.getElementById('inp-1430').value) || 0;
   const mArrastres = parseFloat(document.getElementById('inp-arrastres').value) || 0;
   const fechaSabana = document.getElementById('inp-fecha-sabana').value;
+  const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value;
   const fechaRefA = document.getElementById('inp-ref-fecha-a').value;
   const fechaRefB = document.getElementById('inp-ref-fecha-b').value;
 
   if (m1130 === 0 && h1130 === 0 && m1140 === 0 && m1180 === 0 && m1190 === 0 && m1430 === 0 && mArrastres === 0) {
-    alert('Ingresa al menos un concepto del recibo para cotejar.');
+    alert('Ingresa al menos un concepto del recibo para cotejar (o sube el PDF arriba).');
     return;
   }
 
   // Decodificación de referencia (informativa — usa el nivel seleccionado
-  // arriba, no el histórico de cada semana; no cambia con este fix).
+  // arriba, no el histórico de cada semana).
   const dec = decodificar(nivelSel, m1130, m1140, m1180, m1190);
 
   document.getElementById('res-header').textContent =
@@ -2975,8 +3040,7 @@ window.cotejarRecibo = function() {
   if (notas.length) { tolNote.innerHTML = notas.join('<br>'); tolNote.style.display = 'block'; }
   else { tolNote.style.display = 'none'; }
 
-  const fechaDeposito = document.getElementById('inp-fecha-deposito').value;
-  const fechaAncla = fechaSabana || fechaDeposito;
+  const fechaAncla = fechaSabana || fechaCatorcena;
   const pendientes = excluirSemanasImplausibles(obtenerSemanasPendientesCot(nivelSel), fechaAncla);
   const pendientesRef = pendientesCercaDeReferencia(pendientes, [fechaRefA, fechaRefB]);
   const conceptos = [];
@@ -2989,12 +3053,9 @@ window.cotejarRecibo = function() {
   if (m1140 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.importeComidas, m1140, 1.00, fechaSabana, '1140 · Comidas'));
   if (m1180 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.tol, m1180, 2.00, fechaSabana, '1180 · Tolerancia'));
   if (m1190 > 0) {
-    // v21.0fixCotejador: se prueba PRIMERO la fórmula "recibo" (sal÷8) —
-    // confirmado contra un recibo real que PEMEX paga con esa fórmula en
-    // la práctica (172.55 / (276.08/8) = 5.00 hrs exactas), no con la
-    // fórmula CCT completa (sal÷8 + hora TE ocasional, Cláusula 57). La
-    // fórmula CCT queda como segundo intento, útil para detectar cuando
-    // sí pagaron el importe completo que marca el contrato.
+    // Se prueba PRIMERO la fórmula "recibo" (sal÷8) — confirmado contra
+    // un recibo real que PEMEX paga con esa fórmula en la práctica, no
+    // con la fórmula CCT completa (Cláusula 57).
     let r = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penRecibo, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula recibo)');
     if (r && r.sinCoincidencia && !r.demasiadoGrande) {
       const rCCT = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penCCT, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula CCT)');
@@ -3005,9 +3066,7 @@ window.cotejarRecibo = function() {
 
   renderResultadoCotejo({ conceptos: conceptos.filter(Boolean), pendientes });
 
-  // 1430 y arrastre: solo referencia, nunca buscados — ver comentario más
-  // arriba sobre por qué no son cotejables con los datos que ControlTE
-  // captura hoy.
+  // 1430 y arrastre: solo referencia, nunca buscados.
   const refWrap = document.getElementById('cotejo-solo-referencia');
   const notasRef = [];
   if (m1430 > 0) {
@@ -3034,10 +3093,6 @@ Object.keys(TAB).sort((a,b) => a-b).forEach(n => {
   selCot.appendChild(o);
 });
 document.getElementById('inp-jornada').value = localStorage.getItem('cte_jornada') || '00';
-// Depósito y catorcena parten de hoy (el usuario normalmente los corrige);
-// la Fecha de Sábana se deja VACÍA a propósito — es la que alimenta el
-// desempate obligatorio y no debe asumirse en silencio.
-document.getElementById('inp-fecha-deposito').value = new Date().toISOString().slice(0, 10);
 document.getElementById('inp-fecha-catorcena').value = new Date().toISOString().slice(0, 10);
 
 })();
