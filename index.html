@@ -915,7 +915,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv22.5-lectorPDF.html';
+const VERSION_ARCHIVO = 'controlTEv22.6-sinFiltroRezago.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -2538,15 +2538,18 @@ const fDateCot = iso => new Date(iso+'T12:00').toLocaleDateString('es-MX', {day:
 // Confirmado por el usuario, de su experiencia real: Recursos Humanos
 // nunca paga de inmediato — jamás en menos de ~4 semanas desde que se
 // trabajó, y por supuesto jamás puede pagar una semana que todavía no ha
-// pasado (no lee el futuro). Es un valor FIJO en el código, no un ajuste
-// que el usuario tenga que manejar en la pantalla.
-const RH_REZAGO_MINIMO_DIAS = 28; // ~4 semanas
-
-// Descarta como candidatas las semanas que sean implausibles frente a
-// 'fechaAncla' (Fecha de Sábana si se dio, si no Catorcena del recibo):
-// tanto las que caen DESPUÉS de esa fecha (pago de algo que aún no se
-// trabaja — imposible) como las que caen MUY CERCA de ella (pago
-// inmediato — no pasa en la práctica).
+// pasado (no lee el futuro). Ese es el único límite que es un HECHO, no
+// una suposición.
+//
+// FIX v22.6: se quita el mínimo de 28 días (~4 semanas) que antes también
+// descartaba candidatas. Se comprobó con recibos reales del usuario que
+// NO es una regla universal: una semana se encontró pagada en solo 11
+// días (recibo catorcena 11/2026, referencia 20260504 = semana con fin
+// 10-may-2026, EXPEDIDO 21-may-2026). Descartar por un mínimo de días fijo
+// producía falsos negativos. Ahora solo se descarta lo que es
+// matemáticamente imposible (pago de una semana que aún no termina); el
+// desempate entre candidatas restantes sigue siendo obligatorio vía Fecha
+// de Sábana (ver más abajo), nunca una suposición sobre cuánto tarda RH.
 //
 // FIX v22.5 (bug real, confirmado con datos reales del usuario): este
 // filtro es tan bueno como la fecha que se le dé. Antes 'Catorcena del
@@ -2567,7 +2570,7 @@ function excluirSemanasImplausibles(pendientes, fechaAncla) {
   return pendientes.filter(p => {
     const fin = new Date(p.fin + 'T12:00');
     const diasDeRezago = (ancla - fin) / 86400000;
-    return diasDeRezago >= RH_REZAGO_MINIMO_DIAS;
+    return diasDeRezago >= 0;
   });
 }
 
