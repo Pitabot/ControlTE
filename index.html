@@ -947,7 +947,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv23.0-cotejadorAdeudoExcedente.html';
+const VERSION_ARCHIVO = 'controlTEv23.1-fixCrashHistorialDiferencias.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1142,7 +1142,6 @@ function semData(s) {
   }
   return datos[k];
 }
-
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -2392,7 +2391,24 @@ function renderHist() {
         </div>
         ${Array.isArray(sd.diferenciasRecibo) && sd.diferenciasRecibo.length ? `
         <div style="margin-top:6px;">
-          ${sd.diferenciasRecibo.map(d => `<span class="hbdg-diff ${d.tipo}" title="${d.concepto} · calculado ${f$Cot(d.calculado)} vs recibo ${f$Cot(d.recibo)}${d.catorcena ? ' · Cat. ' + String(d.catorcena).padStart(2,'0') : ''}">${d.tipo === 'adeudo' ? '⚠️ Adeudo' : '🔵 Excedente'} $${d.diff.toFixed(2)}</span>`).join('')}
+          ${sd.diferenciasRecibo.map(d => {
+            // FIX v23.1 (bug real, confirmado por el usuario: rompió Historial
+            // por completo desde s9 hacia abajo): 'f$Cot' está declarado DENTRO
+            // del IIFE del Cotejador ("Envuelto en IIFE para no chocar con
+            // nombres ya usados arriba" — ver comentario junto a ese IIFE), o
+            // sea que es privado a ese bloque y renderHist() (fuera del IIFE)
+            // nunca pudo verlo. v23.0 lo llamó aquí de todos modos, y como
+            // sems.forEach() no atrapa excepciones, la PRIMERA semana con
+            // diferenciasRecibo (la más nueva primero, orden descendente)
+            // tiraba un ReferenceError que abortaba el resto del render —
+            // todas las semanas MÁS VIEJAS que esa (aquí, semana 9 para abajo)
+            // simplemente dejaban de aparecer, como si se hubieran borrado.
+            // Los datos nunca se tocaron (confirmado en Firestore) — era pura
+            // pantalla. Ahora se formatea el dinero en línea, sin depender de
+            // nada declarado dentro del IIFE.
+            const fMoneyHist = n => '$' + n.toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
+            return `<span class="hbdg-diff ${d.tipo}" title="${d.concepto} · calculado ${fMoneyHist(d.calculado)} vs recibo ${fMoneyHist(d.recibo)}${d.catorcena ? ' · Cat. ' + String(d.catorcena).padStart(2,'0') : ''}">${d.tipo === 'adeudo' ? '⚠️ Adeudo' : '🔵 Excedente'} $${d.diff.toFixed(2)}</span>`;
+          }).join('')}
         </div>` : ''}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
