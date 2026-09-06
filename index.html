@@ -915,7 +915,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv22.7-fixLectorPDFStale.html';
+const VERSION_ARCHIVO = 'controlTEv22.8-fixSyncNube.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1267,9 +1267,16 @@ async function guardarAhoraDirecto() {
     try { congelarMontos(semana); } catch (eCalc) { /* se guarda sin snapshot de cálculo */ }
 
     const sd = semData(semana);
+    // FIX v22.8: se agrega 'ultimaModificacion' con la hora del SERVIDOR de
+    // Firestore (no la del dispositivo) en cada escritura de una semana.
+    // 'congelado' (Date.now() local) sigue existiendo para lo que ya
+    // dependía de él, pero no sirve para decidir qué dispositivo tiene el
+    // dato más nuevo entre celular y laptop si el reloj de alguno de los
+    // dos está desfasado. 'ultimaModificacion' sí es confiable entre
+    // dispositivos porque la pone el servidor, no el cliente.
     await db.collection('cuentas').doc(fbCodigo)
              .collection('semanas').doc('s' + semana)
-             .set(sd);
+             .set({ ...sd, ultimaModificacion: firebase.firestore.FieldValue.serverTimestamp() });
     const hora = new Date().toLocaleTimeString('es-MX');
     st.className = 'guardar-ahora-status ok';
     st.textContent = `✅ Guardado — ${hora}`;
@@ -1290,9 +1297,16 @@ async function guardarSemanaFirestore() {
   if (!fbCodigo || !fbUid) { setSyncStatus('error'); return; } // sin sesion activa, no hay a donde escribir
   try {
     const sd = semData(semana);
+    // FIX v22.8: se agrega 'ultimaModificacion' con la hora del SERVIDOR de
+    // Firestore (no la del dispositivo) en cada escritura de una semana.
+    // 'congelado' (Date.now() local) sigue existiendo para lo que ya
+    // dependía de él, pero no sirve para decidir qué dispositivo tiene el
+    // dato más nuevo entre celular y laptop si el reloj de alguno de los
+    // dos está desfasado. 'ultimaModificacion' sí es confiable entre
+    // dispositivos porque la pone el servidor, no el cliente.
     await db.collection('cuentas').doc(fbCodigo)
              .collection('semanas').doc('s' + semana)
-             .set(sd);
+             .set({ ...sd, ultimaModificacion: firebase.firestore.FieldValue.serverTimestamp() });
     // Última actividad + perfil (nivel/jornada): escritura aparte y NO
     // bloqueante — si falla, no debe tumbar el guardado real de la
     // semana, que es lo crítico. El admin usa 'ultimoAcceso' solo como
@@ -1363,6 +1377,39 @@ function getUserKey() {
 // y la fusion de historiales viejos (como la de Raul) ya se resolvio una
 // vez, en el script de migracion, antes de subir los datos.
 
+// FIX v22.8: 'congelado' es Date.now() del DISPOSITIVO — no sirve para
+// comparar qué versión de una semana es más nueva entre celular y laptop
+// si los relojes están desfasados, y además el Cotejador (ver
+// confirmarLiquidacionCotejo) nunca lo actualiza al marcar un pago, solo
+// al capturar horas. Por eso una semana recién liquidada desde el celular
+// llegaba a Firestore bien, pero restaurarDesdeNube() en la laptop la veía
+// "igual de vieja" que su propia copia y nunca la jalaba: Historial seguía
+// mostrando PENDIENTE aunque en la nube ya estuviera pagado. 'ultimaModi-
+// ficacion' (FieldValue.serverTimestamp(), puesta por el servidor en cada
+// escritura) sí es confiable entre dispositivos. Esta función acepta un
+// valor que puede ser: un Timestamp de Firestore recién leído de un
+// snapshot (tiene .toMillis()), o el mismo Timestamp ya reconstituido
+// desde JSON.parse(localStorage) tras un guardar() previo (llega como
+// {seconds, nanoseconds} plano, sin métodos). Sin valor, o si trae otra
+// forma inesperada, cuenta como 0 y el que compara cae de vuelta a
+// 'congelado'.
+function tsMillis(v) {
+  if (!v) return 0;
+  if (typeof v.toMillis === 'function') return v.toMillis();
+  if (typeof v.seconds === 'number') return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  return 0;
+}
+// Toma lo más reciente entre 'congelado' (local, por dispositivo) y
+// 'ultimaModificacion' (servidor, confiable entre dispositivos) de una
+// semana — así una captura de horas recién hecha (que sí actualiza
+// 'congelado' pero todavía no tiene 'ultimaModificacion' propio) y un pago
+// recién confirmado por el Cotejador (que sí actualiza 'ultimaModificacion'
+// pero no 'congelado') se reconocen igual de "nuevos".
+function semTS(sd) {
+  if (!sd) return -1;
+  return Math.max(sd.congelado || 0, tsMillis(sd.ultimaModificacion));
+}
+
 async function restaurarDesdeNube() {
   if (!fbCodigo) return false;   // sin codigo canjeado, no hay cuenta que leer
   try {
@@ -1401,16 +1448,19 @@ async function restaurarDesdeNube() {
 
     // FUSIÓN, no reemplazo. Varios dispositivos pueden tener capturas que
     // el otro no tiene todavía (ej.: laptop desactualizada + celular con
-    // semanas nuevas). Para cada semana, nos quedamos con la version cuyo
-    // 'congelado' (timestamp de ultimo guardado) sea mas reciente. Si una
-    // semana solo existe en un lado (local o nube), esa version se
-    // conserva sin tocar — nunca se borra nada por diferencia de datos.
+    // semanas nuevas). Para cada semana, nos quedamos con la version mas
+    // reciente entre 'congelado' y 'ultimaModificacion' (ver semTS() arriba
+    // — FIX v22.8, antes solo miraba 'congelado' y por eso los pagos
+    // confirmados desde el Cotejador en otro dispositivo nunca se jalaban
+    // aquí). Si una semana solo existe en un lado (local o nube), esa
+    // version se conserva sin tocar — nunca se borra nada por diferencia
+    // de datos.
     let huboCambiosLocales = false;
     semanasSnap.forEach(d => {
       const remota = d.data();
       const local  = datos[d.id];
-      const remotaTS = remota.congelado || 0;
-      const localTS  = local ? (local.congelado || 0) : -1;
+      const remotaTS = semTS(remota);
+      const localTS  = local ? semTS(local) : -1;
       if (!local || remotaTS > localTS) {
         datos[d.id] = remota;
         huboCambiosLocales = true;
@@ -1427,6 +1477,11 @@ async function restaurarDesdeNube() {
     // ahora que sí hay conexión, para que el otro dispositivo las reciba
     // en su proximo restaurarDesdeNube().
     const semanasRemotasIds = new Set(semanasSnap.docs.map(d => d.id));
+    // FIX v22.8: mapa id -> datos remotos, para no repetir semanasSnap.docs.find()
+    // (que ya usaba el bucle de abajo) y para reusar el mismo semTS() de la
+    // fusión de arriba, ahora que la comparación también mira
+    // 'ultimaModificacion' y no solo 'congelado'.
+    const remotasPorId = new Map(semanasSnap.docs.map(d => [d.id, d.data()]));
     // FIX v20.2 (bug #2): antes, si CUALQUIER iteración de este bucle
     // lanzaba (ej. corte de red a media subida, con varias semanas de
     // rezago en el dispositivo), el catch general de toda la función se
@@ -1437,17 +1492,25 @@ async function restaurarDesdeNube() {
     // en su propio try/catch: una falla puntual ya no aborta el resto del
     // lote, se loguea a consola y se registra en 'ultimoError' (mismo
     // patrón que guardarSemanaFirestore(), FIX v12.3.2). Como el
-    // 'congelado' local de esa semana sigue siendo más nuevo que el de la
-    // nube, el siguiente restaurarDesdeNube() la vuelve a intentar sola.
+    // timestamp (ver semTS()) local de esa semana sigue siendo más nuevo
+    // que el de la nube, el siguiente restaurarDesdeNube() la vuelve a
+    // intentar sola.
     const semanasFallidas = [];
     for (const sID of Object.keys(datos)) {
       const local = datos[sID];
-      const localTS = local.congelado || 0;
+      const localTS = semTS(local);
       const enNube = semanasRemotasIds.has(sID);
-      const remotaTS = enNube ? (semanasSnap.docs.find(d => d.id === sID).data().congelado || 0) : -1;
+      const remotaTS = enNube ? semTS(remotasPorId.get(sID)) : -1;
       if (!enNube || localTS > remotaTS) {
         try {
-          await cuentaRef.collection('semanas').doc(sID).set(local);
+          // FIX v22.8: mismo patrón que guardarSemanaFirestore() /
+          // guardarAhoraDirecto() / confirmarLiquidacionCotejo() — se
+          // refresca 'ultimaModificacion' con la hora del SERVIDOR también
+          // en esta subida de "reintento" (antes solo hacía set(local) tal
+          // cual, dejando ese campo desactualizado hasta la próxima edición
+          // real de esa semana).
+          await cuentaRef.collection('semanas').doc(sID)
+            .set({ ...local, ultimaModificacion: firebase.firestore.FieldValue.serverTimestamp() });
         } catch (eSemana) {
           semanasFallidas.push(sID);
           console.error('restaurarDesdeNube(): no se pudo subir', sID, eSemana.code || '', eSemana.message || eSemana);
@@ -3023,7 +3086,14 @@ window.confirmarLiquidacionCotejo = async function() {
     const fallidas = [];
     for (const key of claves) {
       try {
-        await db.collection('cuentas').doc(fbCodigo).collection('semanas').doc(key).set(datos[key]);
+        // FIX v22.8: 'confirmarLiquidacionCotejo' nunca actualizaba
+        // 'congelado' al marcar un pago (solo se actualiza al capturar
+        // horas), así que una semana recién confirmada podía verse "vieja"
+        // frente a otro dispositivo. 'ultimaModificacion' (hora del
+        // servidor) se pone aquí también para que este cambio sí cuente
+        // como el más reciente entre dispositivos.
+        await db.collection('cuentas').doc(fbCodigo).collection('semanas').doc(key)
+          .set({ ...datos[key], ultimaModificacion: firebase.firestore.FieldValue.serverTimestamp() });
       } catch (eSync) {
         fallidas.push(key);
         console.error('confirmarLiquidacionCotejo(): no se pudo subir', key, eSync.code || '', eSync.message || eSync);
