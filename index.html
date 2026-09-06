@@ -647,9 +647,11 @@ body.plan-free #scards { display: none !important; }
       <strong>¿Cómo funciona?</strong> Sube el PDF de tu recibo (se lee en tu propio teléfono, no se
       manda a ningún servidor) o escribe los pesos a mano junto a cada clave, y presiona
       "Buscar y cotejar". La app revisa tu historial guardado y te dice exactamente cuál semana
-      (o semanas) fue la que te pagaron — sin importar qué tan vieja sea. Si encuentra más de una
-      semana que podría ser la correcta, te va a pedir la <b>Fecha de Sábana / Proceso RH</b> para
-      decidir cuál es — así no adivina.
+      (o semanas) fue la que te pagaron — sin importar qué tan vieja sea. Revisa siempre el
+      <b>Resumen de conceptos del recibo</b> y las tarjetas por semana antes de confirmar: si hay
+      más de una semana posible para el mismo pago, la app elige sola la más cercana en monto y te
+      avisa qué otras candidatas había — cada tarjeta trae su propia casilla, así que si tú sabes
+      que la elegida no es la correcta, desmárcala y marca la que sí es antes de confirmar.
     </div>
 
     <div class="sec-lbl">Leer recibo automáticamente (opcional)</div>
@@ -660,17 +662,15 @@ body.plan-free #scards { display: none !important; }
 
     <div class="sec-lbl">Fechas de control</div>
     <div class="card">
-      <div class="input-grid">
-        <div class="field">
-          <label>Catorcena del recibo</label>
-          <input type="date" id="inp-fecha-catorcena">
-          <span class="hint">Fecha de emisión (EXPEDIDO) impresa en el recibo — el lector de PDF la llena sola. Déjala vacía si no la sabes; no adivines con la fecha de hoy.</span>
-        </div>
-        <div class="field">
-          <label>Fecha de Sábana / Proceso RH</label>
-          <input type="date" id="inp-fecha-sabana">
-          <span class="hint">Solo hace falta llenarla si la app encuentra más de una semana posible para el mismo pago</span>
-        </div>
+      <!-- FIX v25.1: se elimina por completo el campo de Fecha de Sábana /
+           Proceso RH (Piver indicó explícitamente que no tiene acceso a esa
+           fecha y pidió quitarlo de la interfaz, no solo hacerlo opcional).
+           El desempate entre combinaciones posibles ahora siempre se hace
+           por cercanía en monto (elegirPorCercania), nunca por fecha. -->
+      <div class="field">
+        <label>Catorcena del recibo</label>
+        <input type="date" id="inp-fecha-catorcena">
+        <span class="hint">Fecha de emisión (EXPEDIDO) impresa en el recibo — el lector de PDF la llena sola. Déjala vacía si no la sabes; no adivines con la fecha de hoy.</span>
       </div>
       <div class="input-grid">
         <div class="field">
@@ -959,7 +959,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv24.0-resumenConceptosCotejador.html';
+const VERSION_ARCHIVO = 'controlTEv25.1-quitaCampoSabana.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1154,7 +1154,6 @@ function semData(s) {
   }
   return datos[k];
 }
-
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -2916,6 +2915,27 @@ function elegirPorDesempate(combos, items, fechaSabanaISO) {
   return { elegido: puntuados[0], huboDesempate: true, alternativas: puntuados.slice(1) };
 }
 
+// v25.0-confirmacionManualSinSabana: desempate SIN Fecha de Sábana. Piver
+// (usuario real, no RH) confirmó que NUNCA tiene acceso a esa fecha —
+// exigirla para desambiguar dejaba varios conceptos permanentemente
+// atorados en "requiere desempate" para él. Este es el reemplazo cuando el
+// campo viene vacío: en vez de bloquear el cotejo completo, se elige la
+// combinación cuyo monto quede MÁS CERCA del objetivo (y entre empates de
+// diferencia, la de menos semanas involucradas) — mismo criterio que ya se
+// usaba para elegir "la más cercana" cuando NINGUNA combinación entraba en
+// tolerancia (combinacionMasCercana). Las demás candidatas NO se descartan:
+// se listan como alternativas en el aviso y en el resumen de conceptos,
+// para que el usuario pueda desmarcar la casilla de la semana elegida y
+// confirmar a mano la que él sepa que es la correcta.
+function elegirPorCercania(combos) {
+  if (combos.length <= 1) return { elegido: combos[0] || null, huboDesempate: false };
+  const ordenados = combos.slice().sort((a, b) => {
+    if (a.diff !== b.diff) return a.diff - b.diff;
+    return a.idx.length - b.idx.length;
+  });
+  return { elegido: ordenados[0], huboDesempate: true, alternativas: ordenados.slice(1) };
+}
+
 // v23.0-cotejadorAdeudoExcedente: 'toleranciaAmplia' es un segundo intento,
 // OPCIONAL (0 = desactivado), que solo se dispara cuando la búsqueda con la
 // tolerancia estricta no encontró NADA. Antes de esta versión, un concepto
@@ -2954,15 +2974,26 @@ function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaIS
       busquedaIncompleta
     };
   }
-  if (combos.length > 1 && !fechaSabanaISO) {
-    return { etiqueta, objetivo, requiereDesempate: true, combos };
-  }
-  const { elegido, huboDesempate, alternativas } = elegirPorDesempate(combos, pendientes, fechaSabanaISO);
+  // FIX v25.0 (a petición explícita: "yo no tengo acceso a la sábana, quita
+  // eso"): antes, 2+ combinaciones sin Fecha de Sábana devolvían
+  // 'requiereDesempate' y quedaban bloqueadas indefinidamente para un
+  // usuario que nunca puede llenar ese campo. Si SÍ hay Fecha de Sábana
+  // (para quien tenga acceso a ella, sigue funcionando igual que antes —
+  // más preciso), se usa esa fecha; si NO, se resuelve sola por cercanía de
+  // monto (elegirPorCercania) en vez de bloquear.
+  const { elegido, huboDesempate, alternativas } = fechaSabanaISO
+    ? elegirPorDesempate(combos, pendientes, fechaSabanaISO)
+    : elegirPorCercania(combos);
+  const desempateAutomatico = huboDesempate && !fechaSabanaISO;
   return {
     etiqueta, objetivo,
     semanas: elegido.idx.map(i => pendientes[i]),
     suma: elegido.suma, diff: elegido.diff,
     huboDesempate, numAlternativas: huboDesempate ? alternativas.length : 0,
+    desempateAutomatico,
+    alternativas: desempateAutomatico
+      ? alternativas.map(a => ({ semanas: a.idx.map(i => pendientes[i].numSem), suma: a.suma, diff: a.diff }))
+      : undefined,
     conDiferencia,
     tipoDiferencia: conDiferencia ? (elegido.suma > objetivo ? 'adeudo' : 'excedente') : undefined
   };
@@ -3128,21 +3159,42 @@ function renderResultadoCotejo(resultado) {
   const wrapVol = document.getElementById('cotejo-voladas');
   const aviso = document.getElementById('cotejo-aviso');
   const confirmarWrap = document.getElementById('cotejo-confirmar-wrap');
-  const fechaSabanaVal = document.getElementById('inp-fecha-sabana').value;
+  // FIX v25.1: el campo "Fecha de Sábana / Proceso RH" se eliminó por
+  // completo de la interfaz (a petición explícita de Piver). Se deja esta
+  // variable en '' para no tener que tocar el código de abajo que la
+  // referencia (es una rama que ya nunca se activa, ver notasDesempate).
+  const fechaSabanaVal = '';
 
+  // FIX v25.0: reescrito para acumular TODAS las notas que apliquen a un
+  // mismo concepto en vez de un if/else-if exclusivo — antes, un concepto
+  // que a la vez tenía diferencia Y fue desempatado automáticamente (ambos
+  // pueden pasar juntos) solo mostraba UNA de las dos notas, perdiendo la
+  // otra en silencio.
   const avisos = [];
   resultado.conceptos.forEach(c => {
+    const partes = [];
     if (c.requiereDesempate) {
-      avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay ${c.combos.length} combinaciones distintas de semanas que coinciden con ${f$Cot(c.objetivo)}. Ingresa la <b>Fecha de Sábana / Proceso RH</b> para desempatar y vuelve a cotejar — la regla de desempate es obligatoria, no se adivina.`);
-    } else if (c.demasiadoGrande) {
-      avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay más de ${MAX_SEMANAS_PENDIENTES} semanas pendientes sin pagar — no se probaron todas las combinaciones posibles. Marca como pagadas las semanas viejas que ya cobraste, o revisa esta manualmente.`);
-    } else if (c.sinCoincidencia && c.busquedaIncompleta) {
-      avisos.push(`⚠️ <b>${c.etiqueta}</b>: ${f$Cot(c.objetivo)} es un monto muy grande frente a tus semanas pendientes — no se pudieron probar todas las combinaciones posibles a tiempo. Revisa que el monto esté bien capturado (¿un cero de más?).`);
-    } else if (c.conDiferencia) {
+      partes.push(`hay ${c.combos.length} combinaciones distintas de semanas que coinciden con ${f$Cot(c.objetivo)}. Ingresa la <b>Fecha de Sábana / Proceso RH</b> para desempatar y vuelve a cotejar.`);
+    }
+    if (c.demasiadoGrande) {
+      partes.push(`hay más de ${MAX_SEMANAS_PENDIENTES} semanas pendientes sin pagar — no se probaron todas las combinaciones posibles. Marca como pagadas las semanas viejas que ya cobraste, o revisa esta manualmente.`);
+    }
+    if (c.sinCoincidencia && c.busquedaIncompleta) {
+      partes.push(`${f$Cot(c.objetivo)} es un monto muy grande frente a tus semanas pendientes — no se pudieron probar todas las combinaciones posibles a tiempo. Revisa que el monto esté bien capturado (¿un cero de más?).`);
+    }
+    if (c.conDiferencia) {
       // v23.0-cotejadorAdeudoExcedente
       const tipoTxt = c.tipoDiferencia === 'adeudo' ? 'adeudo pendiente (RH debe más)' : 'excedente (RH pagó de más)';
-      avisos.push(`🔵 <b>${c.etiqueta}</b>: la combinación más cercana difiere en ${f$Cot(c.diff)} de lo calculado (calculado ${f$Cot(c.suma)} vs recibo ${f$Cot(c.objetivo)}) — se aceptó porque está dentro de la tolerancia amplia configurada, y se guardará como <b>${tipoTxt}</b> en el Historial.`);
+      partes.push(`🔵 la combinación aceptada difiere en ${f$Cot(c.diff)} de lo calculado (calculado ${f$Cot(c.suma)} vs recibo ${f$Cot(c.objetivo)}) — se aceptó porque está dentro de la tolerancia amplia configurada, y se guardará como <b>${tipoTxt}</b> en el Historial.`);
     }
+    if (c.desempateAutomatico) {
+      // v25.0-confirmacionManualSinSabana: sin Fecha de Sábana, esto ya NO
+      // bloquea — se avisa cuál se eligió y con qué más se comparó, para
+      // que el usuario pueda corregirlo a mano abajo si no es la correcta.
+      const alt = (c.alternativas || []).map(a => `Sem ${a.semanas.join('+')} (dif. ${f$Cot(a.diff)})`).join('; ') || 'ninguna otra';
+      partes.push(`🟢 había ${c.numAlternativas + 1} combinaciones posibles — sin Fecha de Sábana, se eligió automáticamente <b>Sem ${c.semanas.map(s => s.numSem).join('+')}</b> por ser la más cercana en monto. Otras candidatas: ${alt}. Si no es la semana correcta, desmarca su casilla abajo y confirma tú la que sepas que es.`);
+    }
+    if (partes.length) avisos.push(`⚠️ <b>${c.etiqueta}</b>: ${partes.join(' ')}`);
   });
   aviso.innerHTML = avisos.join('<br><br>');
   aviso.style.display = avisos.length ? 'block' : 'none';
@@ -3179,6 +3231,13 @@ function renderResultadoCotejo(resultado) {
       estadoTxt = `✅ Coincide exacto`;
       estadoClase = 'ok';
       detalle = `Sem ${c.semanas.map(s => s.numSem).join(', ')}.`;
+    }
+    // v25.0-confirmacionManualSinSabana: el desempate automático (sin
+    // Fecha de Sábana) es independiente del estado de arriba — se anota
+    // aparte para no perder ninguna de las dos notas.
+    if (c.desempateAutomatico) {
+      const alt = (c.alternativas || []).map(a => `Sem ${a.semanas.join('+')} (dif. ${f$Cot(a.diff)})`).join('; ') || 'ninguna otra';
+      detalle += ` 🟢 Elegida automáticamente entre ${c.numAlternativas + 1} posibles (sin Fecha de Sábana) — otras: ${alt}.`;
     }
     return `<div class="cotejo-row">
       <div style="display:flex;flex-direction:column;gap:2px;">
@@ -3250,15 +3309,29 @@ function renderResultadoCotejo(resultado) {
       const badgeClase = parcial ? 'warn' : (tieneDiferencia ? 'diff' : 'ok');
       const badgeTxt = parcial ? 'Liquidación parcial' : (tieneDiferencia ? 'Liquidada con diferencia' : 'Liquidada completa');
       const icono = parcial ? '⚠️' : (tieneDiferencia ? '🔵' : '✅');
-      return `<div class="cotejo-card">
+      // FIX v25.0 (a petición explícita: "no veo un botón donde yo pueda
+      // grabar los resultados y guardarlos como pagados con las
+      // discrepancias"): antes SOLO se podía confirmar una semana si TODOS
+      // los conceptos coincidían exacto en ella — una semana "parcial"
+      // (le faltaba un concepto porque otro concepto encontró su combo en
+      // OTRA semana) nunca se podía confirmar, sin importar qué tan seguro
+      // estuviera el usuario de que sí era la semana correcta. Ahora CADA
+      // semana tocada trae su propia casilla: viene premarcada si quedó
+      // completa (igual que antes), pero el usuario puede marcar/desmarcar
+      // cualquiera a mano — él conoce sus propias semanas trabajadas mejor
+      // que el algoritmo, sobre todo cuando el desempate fue automático.
+      return `<div class="cotejo-card" data-semana-key="${s.key}">
         <div class="cotejo-header ${headerClase}">
-          <div>${icono} Semana ${s.numSem} — ${fDateCot(s.ini)} al ${fDateCot(s.fin)}</div>
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;flex:1;">
+            <input type="checkbox" class="chk-confirmar-semana" data-key="${s.key}" onchange="actualizarBotonConfirmarCotejo()" ${parcial ? '' : 'checked'} style="width:17px;height:17px;cursor:pointer;flex-shrink:0;">
+            <span>${icono} Semana ${s.numSem} — ${fDateCot(s.ini)} al ${fDateCot(s.fin)}</span>
+          </label>
           <span class="badge-match ${badgeClase}">${badgeTxt}</span>
         </div>
         <div class="cotejo-body" style="padding:10px 16px;">
           ${chips}${chipsDiferencia}
-          ${parcial ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">No se marcará como pagada automáticamente — le falta coincidir en el/los concepto(s) marcados con ✗.</div>' : ''}
-          ${tieneDiferencia ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">Se marcará como pagada. La diferencia arriba queda guardada en el Historial de esta semana para que la revises (¿día festivo trabajado? ¿descanso laborado? ¿ajuste de RH?) — no se descarta.</div>' : ''}
+          ${parcial ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">Le falta coincidir en el/los concepto(s) marcados con ✗. La casilla de arriba viene SIN marcar — si tú sabes que esta semana sí es correcta, márcala y se confirmará igual, con la diferencia que se pueda calcular.</div>' : ''}
+          ${tieneDiferencia ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">La diferencia arriba queda guardada en el Historial de esta semana para que la revises (¿día festivo trabajado? ¿descanso laborado? ¿ajuste de RH?) — no se descarta.</div>' : ''}
           <!-- v24.0-resumenConceptosCotejador: antes esta cifra (TE/comidas/
                tolerancia/penado calculados de ESTA semana) solo se veía en
                "Semanas pendientes/voladas" — una semana ya tocada por el
@@ -3275,7 +3348,11 @@ function renderResultadoCotejo(resultado) {
     }).join('');
   }
 
-  const notasDesempate = conceptosResueltos.filter(c => c.huboDesempate).map(c =>
+  // FIX v25.0: el caso "elegido automáticamente sin Fecha de Sábana" ya se
+  // avisa arriba (con sus alternativas) — aquí solo queda el caso de
+  // desempate POR fecha, para no repetir el mismo aviso dos veces con
+  // textos distintos.
+  const notasDesempate = conceptosResueltos.filter(c => c.huboDesempate && !c.desempateAutomatico).map(c =>
     `<div class="tol-note">🟢 <b>${c.etiqueta}</b>: había ${c.numAlternativas + 1} combinaciones posibles para ${f$Cot(c.objetivo)} — se eligió la más cercana a la Fecha de Sábana (${fechaSabanaVal ? fDateCot(fechaSabanaVal) : '—'}).</div>`
   ).join('');
 
@@ -3304,33 +3381,66 @@ function renderResultadoCotejo(resultado) {
         <b>Total semana ${f$Cot(p.totalSemana)}</b>
       </div>`).join('');
 
-  // v23.0-cotejadorAdeudoExcedente: antes solo se guardaba la semana; ahora
-  // también se guarda su lista de diferencias (vacía si no tuvo ninguna)
-  // para que confirmarLiquidacionCotejo() pueda escribirlas en sd.
-  ultimoResultadoCotejo = { semanasLiquidadas: semanasCompletas.map(e => ({ semana: e.semana, diferencias: e.diferencias })) };
+  // FIX v25.0: antes solo se guardaban las semanas "completas" (único
+  // grupo que se podía confirmar). Ahora se guardan TODAS las semanas
+  // tocadas — completas, con diferencia, o parciales — porque cuál de
+  // ellas se confirma ya no lo decide el algoritmo solo: lo decide el
+  // usuario marcando/desmarcando la casilla de cada tarjeta.
+  // 'semanasCompletas' se sigue usando nada más para el conteo inicial de
+  // casillas premarcadas (ver el cotejo-card de arriba).
+  ultimoResultadoCotejo = { semanasLiquidadas: semanasTocadas.map(e => ({ semana: e.semana, diferencias: e.diferencias })) };
   const btn = document.getElementById('btn-confirmar-cotejo');
-  if (semanasCompletas.length > 0) {
+  if (semanasTocadas.length > 0) {
     confirmarWrap.style.display = 'block';
-    btn.disabled = false;
-    btn.textContent = `✓ Confirmar y marcar ${semanasCompletas.length} semana(s) como pagadas`;
     document.getElementById('cotejo-confirm-status').textContent = '';
+    actualizarBotonConfirmarCotejo();
   } else {
     confirmarWrap.style.display = 'none';
   }
 }
 
+// FIX v25.0: recalcula el texto/estado del botón cada vez que el usuario
+// marca o desmarca una casilla de semana — el conteo y el habilitado ya no
+// son fijos al momento de cotejar, dependen de qué esté marcado AHORA.
+window.actualizarBotonConfirmarCotejo = function() {
+  const btn = document.getElementById('btn-confirmar-cotejo');
+  if (!btn) return;
+  const marcadas = document.querySelectorAll('.chk-confirmar-semana:checked').length;
+  btn.disabled = marcadas === 0;
+  btn.textContent = marcadas > 0
+    ? `✓ Confirmar y marcar ${marcadas} semana(s) como pagadas`
+    : '✓ Marca al menos una semana arriba para confirmar';
+};
+
 window.confirmarLiquidacionCotejo = async function() {
   if (!ultimoResultadoCotejo || !ultimoResultadoCotejo.semanasLiquidadas.length) return;
+
+  // FIX v25.0: 'ultimoResultadoCotejo.semanasLiquidadas' ahora trae TODAS
+  // las semanas tocadas por el recibo, no solo las "completas" — lo que
+  // realmente se confirma es nada más lo que el usuario dejó marcado en
+  // pantalla (ver las casillas .chk-confirmar-semana de cada tarjeta).
+  const clavesMarcadas = new Set(
+    Array.from(document.querySelectorAll('.chk-confirmar-semana:checked')).map(chk => chk.dataset.key)
+  );
+  const entradas = ultimoResultadoCotejo.semanasLiquidadas.filter(e => clavesMarcadas.has(e.semana.key));
+  if (entradas.length === 0) {
+    alert('No dejaste ninguna semana marcada — marca al menos una casilla arriba antes de confirmar.');
+    return;
+  }
+
   const btn = document.getElementById('btn-confirmar-cotejo');
   const status = document.getElementById('cotejo-confirm-status');
   btn.disabled = true;
   btn.textContent = 'Guardando…';
 
   const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value || null;
-  const fechaSabana = document.getElementById('inp-fecha-sabana').value || null;
+  // FIX v25.1: el campo de Fecha de Sábana ya no existe en la interfaz.
+  // Se deja 'reciboFechaSabana' en null (en vez de borrar la propiedad) para
+  // no romper el formato de los documentos ya guardados en Firestore, que
+  // pueden traer este campo de versiones anteriores.
+  const fechaSabana = null;
   const numeroCatorcena = parseInt(document.getElementById('inp-catorcena-numero').value) || 0;
 
-  const entradas = ultimoResultadoCotejo.semanasLiquidadas; // [{semana, diferencias}]
   const claves = entradas.map(e => e.semana.key);
   entradas.forEach(({ semana: s, diferencias }) => {
     const key = s.key;
@@ -3402,7 +3512,15 @@ window.cotejarRecibo = function() {
   const m1190    = parseFloat(document.getElementById('inp-1190').value) || 0;
   const m1430      = parseFloat(document.getElementById('inp-1430').value) || 0;
   const mArrastres = parseFloat(document.getElementById('inp-arrastres').value) || 0;
-  const fechaSabana = document.getElementById('inp-fecha-sabana').value;
+  // FIX v25.1: el campo de Fecha de Sábana se eliminó de la interfaz (a
+  // petición explícita de Piver: "yo no tengo acceso a la sábana, quita
+  // eso"). Se deja fechaSabana siempre en '' para que:
+  //  1) 'fechaAncla' de abajo caiga siempre en fechaCatorcena (la fecha
+  //     EXPEDIDO del recibo) para el guardián de pagos futuros.
+  //  2) buscarConcepto/buscarConceptoConReferencia usen siempre
+  //     elegirPorCercania (desempate por monto) en vez de elegirPorDesempate
+  //     (desempate por fecha), que ya nunca se vuelve a invocar.
+  const fechaSabana = '';
   const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value;
   const fechaRefA = document.getElementById('inp-ref-fecha-a').value;
   const fechaRefB = document.getElementById('inp-ref-fecha-b').value;
