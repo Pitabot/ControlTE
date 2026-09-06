@@ -392,6 +392,19 @@ tr.grow td:last-child { color: #7dd3fc; font-size: 15px; }
 .concepto-chip { display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; margin:2px 3px 2px 0; }
 .concepto-chip.ok { background:#e6f5ec; color:#2a6e3f; }
 .concepto-chip.falta { background:#fdecea; color:#b52b27; text-decoration: line-through; opacity:.75; }
+/* v23.0-cotejadorAdeudoExcedente: un concepto puede coincidir FUERA de la
+   tolerancia estricta pero DENTRO de la "tolerancia amplia" que el usuario
+   configura — antes eso simplemente rechazaba el cotejo entero. Ahora se
+   acepta, se marca visualmente distinto (azul, ni verde "perfecto" ni
+   dorado "le falta algo") y la diferencia queda registrada como adeudo
+   (RH debe más) o excedente (RH pagó de más) en vez de perderse. */
+.cotejo-header.diff { background:#eaf1fb; color:#1a3a6b; border-bottom:1px solid #c7d9f2; }
+.badge-match.diff { background: rgba(26,58,107,.14); color:#1a3a6b; }
+.concepto-chip.adeudo { background:#fdeaea; color:#b52b27; }
+.concepto-chip.excedente { background:#eaf1fb; color:#1a3a6b; }
+.hbdg-diff { display:inline-block; font-size:9px; font-weight:700; padding:2px 7px; border-radius:6px; margin:3px 4px 0 0; }
+.hbdg-diff.adeudo { background:#fdeaea; color:#b52b27; }
+.hbdg-diff.excedente { background:#eaf1fb; color:#1a3a6b; }
 .volada-item { background:#fff8e6; border:1.5px solid #e8d48a; border-left:3px solid var(--gold); border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:12px; line-height:1.6; }
 /* v17.0: plan FREE — oculta todo lo marcado .solo-pago cuando body
    trae la clase .plan-free. Esto es solo cosmético (la barrera real
@@ -738,6 +751,25 @@ body.plan-free #scards { display: none !important; }
         </div>
       </div>
 
+      <!-- v23.0-cotejadorAdeudoExcedente: si un concepto casi coincide pero
+           se pasa de la tolerancia estricta (ej. una comida de diferencia,
+           un día festivo trabajado que no recuerdas, un descanso laborado),
+           antes el cotejo completo se rechazaba como "sin coincidencias".
+           Con esto activado, se acepta esa semana como pagada IGUAL, pero
+           la diferencia se guarda y se muestra en Historial como adeudo o
+           excedente — no se pierde ni se oculta, solo deja de bloquear. -->
+      <div class="input-grid">
+        <div class="field">
+          <label><input type="checkbox" id="inp-aceptar-diferencia" checked style="width:auto;vertical-align:middle;margin-right:6px;"> Aceptar diferencias tolerables (registrar como adeudo/excedente)</label>
+          <span class="hint">Si un concepto no cuadra exacto pero está cerca, esta opción permite marcar la semana como pagada de todos modos, anotando la diferencia en el Historial en vez de rechazar el cotejo entero. Desmárcala si quieres exigir coincidencia exacta, como antes de v23.0.</span>
+        </div>
+        <div class="field">
+          <label>Diferencia máxima aceptada por concepto ($)</label>
+          <input type="number" id="inp-tolerancia-amplia" value="250" min="0" step="0.01">
+          <span class="hint">Por default cubre poco más de 1 comida ($187.75). Súbelo si esperas diferencias más grandes (ej. días festivos), o bájalo a 0 para desactivar esta tolerancia amplia sin desmarcar la casilla.</span>
+        </div>
+      </div>
+
       <button class="btn-calc" onclick="cotejarRecibo()">🔍 Buscar y cotejar</button>
     </div>
 
@@ -915,7 +947,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv22.10-fixCatorcenaSemanaEquivocada.html';
+const VERSION_ARCHIVO = 'controlTEv23.0-cotejadorAdeudoExcedente.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1119,6 +1151,7 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
+
 
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
@@ -2357,6 +2390,10 @@ function renderHist() {
           </select>
           ${sd.catorcena ? `<span style="font-size:10px;font-weight:700;color:var(--blue)">✓ Cat. ${String(sd.catorcena).padStart(2,'0')}</span>` : ''}
         </div>
+        ${Array.isArray(sd.diferenciasRecibo) && sd.diferenciasRecibo.length ? `
+        <div style="margin-top:6px;">
+          ${sd.diferenciasRecibo.map(d => `<span class="hbdg-diff ${d.tipo}" title="${d.concepto} · calculado ${f$Cot(d.calculado)} vs recibo ${f$Cot(d.recibo)}${d.catorcena ? ' · Cat. ' + String(d.catorcena).padStart(2,'0') : ''}">${d.tipo === 'adeudo' ? '⚠️ Adeudo' : '🔵 Excedente'} $${d.diff.toFixed(2)}</span>`).join('')}
+        </div>` : ''}
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
         <div class="htot" style="color:var(--red)">$${tSrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
@@ -2851,10 +2888,35 @@ function elegirPorDesempate(combos, items, fechaSabanaISO) {
   return { elegido: puntuados[0], huboDesempate: true, alternativas: puntuados.slice(1) };
 }
 
-function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta) {
+// v23.0-cotejadorAdeudoExcedente: 'toleranciaAmplia' es un segundo intento,
+// OPCIONAL (0 = desactivado), que solo se dispara cuando la búsqueda con la
+// tolerancia estricta no encontró NADA. Antes de esta versión, un concepto
+// que se pasaba de la tolerancia estricta por poco (ej. exactamente 1
+// comida = $187.75) se reportaba como "sin coincidencia" y bloqueaba todo
+// el cotejo de esa(s) semana(s), aunque el resto de conceptos (T.E.,
+// tolerancia, penado) coincidieran casi al peso. Ahora, si la combinación
+// más cercana cae dentro de tolerancia+toleranciaAmplia, se acepta como
+// coincidencia válida pero marcada con 'conDiferencia:true' — la semana SÍ
+// se puede confirmar como pagada, y la diferencia (adeudo si lo calculado
+// es mayor a lo que pagó el recibo, excedente si es menor) se guarda para
+// mostrarse en Historial en vez de perderse. Esto NUNCA relaja el caso de
+// "demasiadoGrande" ni el de "requiereDesempate": ambigüedad sigue
+// pidiendo Fecha de Sábana, tal como antes.
+function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta, toleranciaAmplia) {
   if (!objetivo || objetivo <= 0) return null;
-  const { combos, demasiadoGrande, busquedaIncompleta } = combinacionesQueCoinciden(pendientes, valueFn, objetivo, tolerancia);
+  const { combos: combosEstrictos, demasiadoGrande, busquedaIncompleta } = combinacionesQueCoinciden(pendientes, valueFn, objetivo, tolerancia);
   if (demasiadoGrande) return { etiqueta, objetivo, sinCoincidencia: true, demasiadoGrande: true };
+
+  let combos = combosEstrictos;
+  let conDiferencia = false;
+  if (combos.length === 0 && toleranciaAmplia > 0) {
+    const ampliado = combinacionesQueCoinciden(pendientes, valueFn, objetivo, tolerancia + toleranciaAmplia);
+    if (!ampliado.demasiadoGrande && ampliado.combos.length > 0) {
+      combos = ampliado.combos;
+      conDiferencia = true;
+    }
+  }
+
   if (combos.length === 0) {
     const cercana = combinacionMasCercana(pendientes, valueFn, objetivo);
     return {
@@ -2872,7 +2934,9 @@ function buscarConcepto(pendientes, valueFn, objetivo, tolerancia, fechaSabanaIS
     etiqueta, objetivo,
     semanas: elegido.idx.map(i => pendientes[i]),
     suma: elegido.suma, diff: elegido.diff,
-    huboDesempate, numAlternativas: huboDesempate ? alternativas.length : 0
+    huboDesempate, numAlternativas: huboDesempate ? alternativas.length : 0,
+    conDiferencia,
+    tipoDiferencia: conDiferencia ? (elegido.suma > objetivo ? 'adeudo' : 'excedente') : undefined
   };
 }
 
@@ -2885,12 +2949,12 @@ function pendientesCercaDeReferencia(pendientes, fechasRefISO) {
     return fechas.some(f => f >= ini && f <= fin);
   });
 }
-function buscarConceptoConReferencia(pendientesTodas, pendientesRef, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta) {
+function buscarConceptoConReferencia(pendientesTodas, pendientesRef, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta, toleranciaAmplia) {
   if (pendientesRef && pendientesRef.length > 0) {
-    const r = buscarConcepto(pendientesRef, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta);
+    const r = buscarConcepto(pendientesRef, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta, toleranciaAmplia);
     if (r && !r.sinCoincidencia) return { ...r, usoFechaReferencia: true };
   }
-  return buscarConcepto(pendientesTodas, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta);
+  return buscarConcepto(pendientesTodas, valueFn, objetivo, tolerancia, fechaSabanaISO, etiqueta, toleranciaAmplia);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3046,6 +3110,10 @@ function renderResultadoCotejo(resultado) {
       avisos.push(`⚠️ <b>${c.etiqueta}</b>: hay más de ${MAX_SEMANAS_PENDIENTES} semanas pendientes sin pagar — no se probaron todas las combinaciones posibles. Marca como pagadas las semanas viejas que ya cobraste, o revisa esta manualmente.`);
     } else if (c.sinCoincidencia && c.busquedaIncompleta) {
       avisos.push(`⚠️ <b>${c.etiqueta}</b>: ${f$Cot(c.objetivo)} es un monto muy grande frente a tus semanas pendientes — no se pudieron probar todas las combinaciones posibles a tiempo. Revisa que el monto esté bien capturado (¿un cero de más?).`);
+    } else if (c.conDiferencia) {
+      // v23.0-cotejadorAdeudoExcedente
+      const tipoTxt = c.tipoDiferencia === 'adeudo' ? 'adeudo pendiente (RH debe más)' : 'excedente (RH pagó de más)';
+      avisos.push(`🔵 <b>${c.etiqueta}</b>: la combinación más cercana difiere en ${f$Cot(c.diff)} de lo calculado (calculado ${f$Cot(c.suma)} vs recibo ${f$Cot(c.objetivo)}) — se aceptó porque está dentro de la tolerancia amplia configurada, y se guardará como <b>${tipoTxt}</b> en el Historial.`);
     }
   });
   aviso.innerHTML = avisos.join('<br><br>');
@@ -3057,8 +3125,20 @@ function renderResultadoCotejo(resultado) {
   conceptosResueltos.forEach(c => {
     if (c.sinCoincidencia) return;
     c.semanas.forEach(s => {
-      if (!porSemana[s.key]) porSemana[s.key] = { semana: s, conceptosOK: [], conceptosFaltantes: [] };
+      if (!porSemana[s.key]) porSemana[s.key] = { semana: s, conceptosOK: [], conceptosFaltantes: [], diferencias: [] };
       porSemana[s.key].conceptosOK.push(c.etiqueta);
+      // v23.0-cotejadorAdeudoExcedente: la diferencia es de la COMBINACIÓN
+      // de semanas de este concepto (no se puede repartir "a la mitad" con
+      // certeza), así que se anota completa en cada semana involucrada,
+      // junto con cuáles semanas la comparten — mejor ser explícito que
+      // inventar un reparto que no se puede sustentar con el recibo.
+      if (c.conDiferencia) {
+        porSemana[s.key].diferencias.push({
+          concepto: c.etiqueta, calculado: c.suma, recibo: c.objetivo,
+          diff: c.diff, tipo: c.tipoDiferencia,
+          semanas: c.semanas.map(w => w.numSem)
+        });
+      }
     });
   });
   Object.values(porSemana).forEach(entry => {
@@ -3079,15 +3159,27 @@ function renderResultadoCotejo(resultado) {
       const s = entry.semana;
       const chips = entry.conceptosOK.map(e => `<span class="concepto-chip ok">✓ ${e}</span>`).join('')
         + entry.conceptosFaltantes.map(e => `<span class="concepto-chip falta">${e}</span>`).join('');
+      // v23.0-cotejadorAdeudoExcedente: chips extra, uno por diferencia
+      // registrada en esta semana (puede haber más de una si varios
+      // conceptos tuvieron diferencia).
+      const chipsDiferencia = entry.diferencias.map(d =>
+        `<span class="concepto-chip ${d.tipo}">${d.tipo === 'adeudo' ? '⚠️ Adeudo' : '🔵 Excedente'} ${f$Cot(d.diff)} · ${d.concepto}</span>`
+      ).join('');
       const parcial = entry.conceptosFaltantes.length > 0;
+      const tieneDiferencia = !parcial && entry.diferencias.length > 0;
+      const headerClase = parcial ? 'no-match' : (tieneDiferencia ? 'diff' : 'match');
+      const badgeClase = parcial ? 'warn' : (tieneDiferencia ? 'diff' : 'ok');
+      const badgeTxt = parcial ? 'Liquidación parcial' : (tieneDiferencia ? 'Liquidada con diferencia' : 'Liquidada completa');
+      const icono = parcial ? '⚠️' : (tieneDiferencia ? '🔵' : '✅');
       return `<div class="cotejo-card">
-        <div class="cotejo-header ${parcial ? 'no-match' : 'match'}">
-          <div>${parcial ? '⚠️' : '✅'} Semana ${s.numSem} — ${fDateCot(s.ini)} al ${fDateCot(s.fin)}</div>
-          <span class="badge-match ${parcial ? 'warn' : 'ok'}">${parcial ? 'Liquidación parcial' : 'Liquidada completa'}</span>
+        <div class="cotejo-header ${headerClase}">
+          <div>${icono} Semana ${s.numSem} — ${fDateCot(s.ini)} al ${fDateCot(s.fin)}</div>
+          <span class="badge-match ${badgeClase}">${badgeTxt}</span>
         </div>
         <div class="cotejo-body" style="padding:10px 16px;">
-          ${chips}
+          ${chips}${chipsDiferencia}
           ${parcial ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">No se marcará como pagada automáticamente — le falta coincidir en el/los concepto(s) tachados.</div>' : ''}
+          ${tieneDiferencia ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">Se marcará como pagada. La diferencia arriba queda guardada en el Historial de esta semana para que la revises (¿día festivo trabajado? ¿descanso laborado? ¿ajuste de RH?) — no se descarta.</div>' : ''}
         </div>
       </div>`;
     }).join('');
@@ -3122,7 +3214,10 @@ function renderResultadoCotejo(resultado) {
         <b>Total semana ${f$Cot(p.totalSemana)}</b>
       </div>`).join('');
 
-  ultimoResultadoCotejo = { semanasLiquidadas: semanasCompletas.map(e => e.semana) };
+  // v23.0-cotejadorAdeudoExcedente: antes solo se guardaba la semana; ahora
+  // también se guarda su lista de diferencias (vacía si no tuvo ninguna)
+  // para que confirmarLiquidacionCotejo() pueda escribirlas en sd.
+  ultimoResultadoCotejo = { semanasLiquidadas: semanasCompletas.map(e => ({ semana: e.semana, diferencias: e.diferencias })) };
   const btn = document.getElementById('btn-confirmar-cotejo');
   if (semanasCompletas.length > 0) {
     confirmarWrap.style.display = 'block';
@@ -3145,14 +3240,29 @@ window.confirmarLiquidacionCotejo = async function() {
   const fechaSabana = document.getElementById('inp-fecha-sabana').value || null;
   const numeroCatorcena = parseInt(document.getElementById('inp-catorcena-numero').value) || 0;
 
-  const claves = ultimoResultadoCotejo.semanasLiquidadas.map(s => s.key);
-  claves.forEach(key => {
+  const entradas = ultimoResultadoCotejo.semanasLiquidadas; // [{semana, diferencias}]
+  const claves = entradas.map(e => e.semana.key);
+  entradas.forEach(({ semana: s, diferencias }) => {
+    const key = s.key;
     const sd = datos[key];
     if (!sd) return;
     sd.pagado = true;
     if (numeroCatorcena > 0) sd.catorcena = numeroCatorcena;
     sd.reciboFechaCatorcena = fechaCatorcena;
     sd.reciboFechaSabana = fechaSabana;
+    // v23.0-cotejadorAdeudoExcedente: se ACUMULA en vez de sobreescribir —
+    // si esta semana ya traía una diferencia de un recibo anterior (caso
+    // raro pero posible) no se pierde al confirmar una nueva.
+    if (diferencias && diferencias.length > 0) {
+      const previas = Array.isArray(sd.diferenciasRecibo) ? sd.diferenciasRecibo : [];
+      const nuevas = diferencias.map(d => ({
+        ...d,
+        catorcena: numeroCatorcena || null,
+        fechaCatorcena: fechaCatorcena,
+        registradoEl: new Date().toISOString()
+      }));
+      sd.diferenciasRecibo = previas.concat(nuevas);
+    }
   });
 
   try {
@@ -3206,6 +3316,12 @@ window.cotejarRecibo = function() {
   const fechaCatorcena = document.getElementById('inp-fecha-catorcena').value;
   const fechaRefA = document.getElementById('inp-ref-fecha-a').value;
   const fechaRefB = document.getElementById('inp-ref-fecha-b').value;
+  // v23.0-cotejadorAdeudoExcedente: solo aplica a conceptos en pesos (1130$,
+  // 1140, 1180, 1190) — el 1130 por horas usa una unidad distinta (hrs) y su
+  // tolerancia estricta de 0.25 hrs ya es holgada para ese caso, así que no
+  // se le suma esta tolerancia amplia en pesos.
+  const aceptarDiferencia = document.getElementById('inp-aceptar-diferencia').checked;
+  const toleranciaAmplia = aceptarDiferencia ? (parseFloat(document.getElementById('inp-tolerancia-amplia').value) || 0) : 0;
 
   if (m1130 === 0 && h1130 === 0 && m1140 === 0 && m1180 === 0 && m1190 === 0 && m1430 === 0 && mArrastres === 0) {
     alert('Ingresa al menos un concepto del recibo para cotejar (o sube el PDF arriba).');
@@ -3268,14 +3384,14 @@ window.cotejarRecibo = function() {
   if (h1130 > 0) {
     conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.horas, h1130, 0.25, fechaSabana, '1130 · T.E. (por horas)'));
   } else if (m1130 > 0) {
-    conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.te, m1130, 2.00, fechaSabana, '1130 · T.E. ($)'));
+    conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.te, m1130, 2.00, fechaSabana, '1130 · T.E. ($)', toleranciaAmplia));
   }
-  if (m1140 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.importeComidas, m1140, 1.00, fechaSabana, '1140 · Comidas'));
-  if (m1180 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.tol, m1180, 2.00, fechaSabana, '1180 · Tolerancia'));
+  if (m1140 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.importeComidas, m1140, 1.00, fechaSabana, '1140 · Comidas', toleranciaAmplia));
+  if (m1180 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.tol, m1180, 2.00, fechaSabana, '1180 · Tolerancia', toleranciaAmplia));
   if (m1190 > 0) {
-    let r = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penRecibo, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula recibo)');
+    let r = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penRecibo, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula recibo)', toleranciaAmplia);
     if (r && r.sinCoincidencia && !r.demasiadoGrande) {
-      const rCCT = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penCCT, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula CCT)');
+      const rCCT = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penCCT, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula CCT)', toleranciaAmplia);
       if (rCCT && !rCCT.sinCoincidencia) r = rCCT;
     }
     conceptos.push(r);
