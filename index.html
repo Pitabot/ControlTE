@@ -786,6 +786,18 @@ body.plan-free #scards { display: none !important; }
       <div class="tol-note" id="cotejo-aviso" style="display:none;background:#fff3f2;color:var(--red);border:1px dashed var(--red);"></div>
       <div class="tol-note" id="cotejo-solo-referencia" style="display:none;"></div>
 
+      <!-- v24.0-resumenConceptosCotejador: antes SOLO se veían los avisos de
+           problema (⚠️/❌) y las tarjetas por semana — no había un lugar
+           único donde ver, de un vistazo, CADA concepto del recibo (1130,
+           1140, 1180, 1190) con su estado real: coincide exacto, coincide
+           con diferencia, ambiguo (falta Fecha de Sábana), o sin
+           coincidencia. Esto se pidió explícitamente porque revisar solo
+           las tarjetas por semana no deja claro qué SÍ coincidió — con
+           varios conceptos ambiguos a la vez, todo se veía como puros
+           problemas aunque algunos conceptos sí hubieran encontrado algo. -->
+      <div class="sec-lbl" style="margin-top:20px;">Resumen de conceptos del recibo</div>
+      <div class="card" id="cotejo-resumen-conceptos" style="margin-bottom:20px;"></div>
+
       <div class="sec-lbl" style="margin-top:20px;">Semanas liquidadas por este recibo</div>
       <div id="cotejo-liquidadas"></div>
 
@@ -947,7 +959,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv23.1-fixCrashHistorialDiferencias.html';
+const VERSION_ARCHIVO = 'controlTEv24.0-resumenConceptosCotejador.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1142,6 +1154,7 @@ function semData(s) {
   }
   return datos[k];
 }
+
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
   authDomain: "controlte-prod.firebaseapp.com",
@@ -1150,7 +1163,6 @@ const firebaseConfig = {
   messagingSenderId: "1092890982693",
   appId: "1:1092890982693:web:3e869bd9e0bb755cb0c2cc"
 };
-
 
 const fbApp = firebase.initializeApp(firebaseConfig);
 const auth  = firebase.auth();
@@ -3135,6 +3147,52 @@ function renderResultadoCotejo(resultado) {
   aviso.innerHTML = avisos.join('<br><br>');
   aviso.style.display = avisos.length ? 'block' : 'none';
 
+  // v24.0-resumenConceptosCotejador: tabla SIEMPRE visible, un renglón por
+  // cada concepto del recibo (1130/1140/1180/1190), con su estado real —
+  // sin tener que deducirlo cruzando las tarjetas por semana. Usa
+  // 'resultado.conceptos' SIN filtrar (antes de quitar requiereDesempate/
+  // demasiadoGrande) para que ni los ambiguos ni los "no calculados" se
+  // pierdan de esta vista.
+  const resumenConceptos = document.getElementById('cotejo-resumen-conceptos');
+  resumenConceptos.innerHTML = resultado.conceptos.map(c => {
+    let estadoTxt, estadoClase, detalle = '';
+    if (c.requiereDesempate) {
+      estadoTxt = `🟡 Ambiguo — ${c.combos.length} combinaciones`;
+      estadoClase = 'warn';
+      detalle = 'Falta la Fecha de Sábana / Proceso RH para desempatar.';
+    } else if (c.demasiadoGrande) {
+      estadoTxt = `⚠️ No calculado`;
+      estadoClase = 'warn';
+      detalle = 'Demasiadas semanas pendientes sin pagar para probar todas las combinaciones.';
+    } else if (c.sinCoincidencia) {
+      estadoTxt = `❌ Sin coincidencia`;
+      estadoClase = 'err';
+      detalle = c.masCercana
+        ? `Más cercana: ${f$Cot(c.masCercana.suma)} (dif. ${f$Cot(c.masCercana.diff)}) con Sem ${c.semanasMasCercana.map(s => s.numSem).join(', ')}.`
+        : (c.busquedaIncompleta ? 'Monto muy grande frente a tus semanas pendientes — no se probó todo a tiempo.' : 'No hay semanas pendientes que se acerquen.');
+    } else if (c.conDiferencia) {
+      const tipoTxt = c.tipoDiferencia === 'adeudo' ? 'Adeudo' : 'Excedente';
+      estadoTxt = `🔵 Coincide con diferencia — ${tipoTxt} ${f$Cot(c.diff)}`;
+      estadoClase = 'warn';
+      detalle = `Sem ${c.semanas.map(s => s.numSem).join(', ')}.`;
+    } else {
+      estadoTxt = `✅ Coincide exacto`;
+      estadoClase = 'ok';
+      detalle = `Sem ${c.semanas.map(s => s.numSem).join(', ')}.`;
+    }
+    return `<div class="cotejo-row">
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="color:var(--ink);font-weight:600;">${c.etiqueta}</span>
+        ${detalle ? `<span style="font-size:10px;color:var(--mid);">${detalle}</span>` : ''}
+      </div>
+      <div class="vals">
+        <span class="val-recibo">Recibo ${f$Cot(c.objetivo)}</span>
+        ${c.suma !== undefined ? `<span class="val-historial">Calculado ${f$Cot(c.suma)}</span>` : ''}
+        <span class="val-diff ${estadoClase}">${estadoTxt}</span>
+      </div>
+    </div>`;
+  }).join('');
+
   const conceptosResueltos = resultado.conceptos.filter(c => !c.requiereDesempate && !c.demasiadoGrande);
 
   const porSemana = {};
@@ -3173,8 +3231,13 @@ function renderResultadoCotejo(resultado) {
   } else {
     htmlLiq += semanasTocadas.map(entry => {
       const s = entry.semana;
+      // FIX v24.0: la única diferencia entre "coincide" y "falta" era el
+      // tachado (text-decoration: line-through) del CSS — fácil de pasar
+      // por alto, sobre todo si varias tarjetas seguidas se ven casi
+      // idénticas. Ahora el chip de "falta" también lleva un ✗ explícito,
+      // igual que el ✓ del que sí coincide — no depende solo del estilo.
       const chips = entry.conceptosOK.map(e => `<span class="concepto-chip ok">✓ ${e}</span>`).join('')
-        + entry.conceptosFaltantes.map(e => `<span class="concepto-chip falta">${e}</span>`).join('');
+        + entry.conceptosFaltantes.map(e => `<span class="concepto-chip falta">✗ ${e}</span>`).join('');
       // v23.0-cotejadorAdeudoExcedente: chips extra, uno por diferencia
       // registrada en esta semana (puede haber más de una si varios
       // conceptos tuvieron diferencia).
@@ -3194,8 +3257,19 @@ function renderResultadoCotejo(resultado) {
         </div>
         <div class="cotejo-body" style="padding:10px 16px;">
           ${chips}${chipsDiferencia}
-          ${parcial ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">No se marcará como pagada automáticamente — le falta coincidir en el/los concepto(s) tachados.</div>' : ''}
+          ${parcial ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">No se marcará como pagada automáticamente — le falta coincidir en el/los concepto(s) marcados con ✗.</div>' : ''}
           ${tieneDiferencia ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">Se marcará como pagada. La diferencia arriba queda guardada en el Historial de esta semana para que la revises (¿día festivo trabajado? ¿descanso laborado? ¿ajuste de RH?) — no se descarta.</div>' : ''}
+          <!-- v24.0-resumenConceptosCotejador: antes esta cifra (TE/comidas/
+               tolerancia/penado calculados de ESTA semana) solo se veía en
+               "Semanas pendientes/voladas" — una semana ya tocada por el
+               recibo no mostraba sus propios números, así que no había
+               forma de auditar a mano si el cotejo tenía sentido. Ahora se
+               ve igual en ambos lados, tocada o no. -->
+          <div style="font-size:11px;color:var(--mid);margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule);">
+            ${s.horas} hrs · TE ${f$Cot(s.te)} · Comidas ${f$Cot(s.importeComidas)} ·
+            Tolerancia ${f$Cot(s.tol)} · Penado (CCT) ${f$Cot(s.penCCT)} ·
+            <b>Total semana ${f$Cot(s.totalSemana)}</b>
+          </div>
         </div>
       </div>`;
     }).join('');
