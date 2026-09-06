@@ -915,7 +915,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv22.8-fixSyncNube.html';
+const VERSION_ARCHIVO = 'controlTEv22.10-fixCatorcenaSemanaEquivocada.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1215,15 +1215,59 @@ function congelarMontos(s) {
 // pintado el valor en pantalla. Se aísla cada mitad para que un fallo de
 // cálculo no bloquee el guardado local, y un fallo de storage no bloquee
 // el intento de subir a Firestore (que es justo el respaldo en ese caso).
+// FIX v22.10: guardar() congelaba y subía SIEMPRE la semana GLOBAL activa
+// ('semana'), sin importar cuál semana se acababa de editar. Eso era
+// correcto para setH/setT/marcarPagado/etc. (todas editan la semana que
+// está abierta en captura, o sea 'semana'), pero setCatorcena(s, val) se
+// usa desde el dropdown de Historial y puede apuntar a CUALQUIER semana
+// 's' — no necesariamente la abierta. Se detectó que asignar catorcena a
+// una semana distinta a la activa congelaba/subía la semana equivocada, y
+// la catorcena de 's' nunca llegaba a Firestore (se quedaba solo en este
+// dispositivo). guardar() ahora delega en guardarSemana(semana) — mismo
+// comportamiento de siempre para quien no pasa semana explícita — y
+// setCatorcena usa guardarSemana(s) para apuntar a la semana correcta.
 function guardar() {
-  try { congelarMontos(semana); } catch (eCalc) { console.error('guardar(): congelarMontos falló', eCalc); }
+  guardarSemana(semana);
+}
+function guardarSemana(s) {
+  try { congelarMontos(s); } catch (eCalc) { console.error('guardarSemana(): congelarMontos falló', eCalc); }
   try {
     localStorage.setItem('cte_v4',      JSON.stringify(datos));
     localStorage.setItem('cte_nivel',   nivel);
     localStorage.setItem('cte_semana',  semana);
     localStorage.setItem('cte_jornada', jornada);
-  } catch (eStorage) { console.error('guardar(): localStorage falló', eStorage); }
-  guardarSemanaFirestoreDebounced();
+  } catch (eStorage) { console.error('guardarSemana(): localStorage falló', eStorage); }
+  guardarSemanaFirestoreDebounced(s);
+}
+
+// FIX v22.9: render() y cambiarSemana() llamaban a guardar() completo —
+// es decir, congelarMontos(semana) [pone congelado=Date.now()] + subida a
+// Firestore — CADA VEZ que se pintaba la pantalla o se navegaba a una
+// semana, aunque no se hubiera editado nada. Efecto real detectado en
+// producción (cuenta Y-Y0G2P02, 2026-09-06): con solo ENTRAR a ver una
+// semana en Historial, la copia local de ese dispositivo (que puede estar
+// desactualizada, ej. sin el pago que el Cotejador confirmó desde otro
+// celular) se marcaba como "recién modificada" y se subía, pisando el
+// pagado/catorcena correctos que ya estaban en la nube. Ver una semana no
+// debe poder alterarla. guardarPosicion() hace SOLO lo que su nombre dice:
+// persistir en localStorage en qué semana/nivel/jornada quedó la app (para
+// sobrevivir un recargo de página) y la estructura que semData() haya
+// creado al visitar una semana nueva — sin tocar 'congelado' ni disparar
+// ninguna escritura a Firestore. render() y cambiarSemana() ahora usan
+// esta función para su guardado de "solo estoy viendo/navegando"; guardar()
+// (completo, con congelarMontos + Firestore) sigue intacto y se sigue
+// llamando SOLO desde las acciones que sí editan datos: setH, setT,
+// setOrden, setOrdenInsalubre, borrarOrden, marcarPagado, setCatorcena,
+// cambiarNivel, cambiarJornada, y el auto-llenado de órdenes dentro de
+// render() (huboAutoAsignacion, que si mutó datos reales, correctamente
+// sigue llamando guardar() completo, no esta).
+function guardarPosicion() {
+  try {
+    localStorage.setItem('cte_v4',      JSON.stringify(datos));
+    localStorage.setItem('cte_nivel',   nivel);
+    localStorage.setItem('cte_semana',  semana);
+    localStorage.setItem('cte_jornada', jornada);
+  } catch (eStorage) { console.error('guardarPosicion(): localStorage falló', eStorage); }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1232,10 +1276,31 @@ function guardar() {
 // semana ni el historial de otro usuario: cada escritura toca
 // solo cuentas/{codigo}/semanas/{sID}.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-let syncTimer = null;
-function guardarSemanaFirestoreDebounced() {
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(guardarSemanaFirestore, 2000); // 2s de inactividad, luego sube
+// FIX v22.10: antes un solo 'syncTimer' compartido para toda la app. Si se
+// editaba una semana y, antes de los 2s, se editaba OTRA (ej. catorcena de
+// s2 y luego de s5 desde Historial), el segundo clearTimeout() cancelaba
+// el envío de la primera — esa edición se perdía silenciosamente hasta la
+// próxima vez que alguien tocara esa semana otra vez. Ahora cada semana
+// tiene su propio temporizador en 'syncTimers', así que ediciones a
+// semanas distintas ya no se cancelan entre sí; múltiples ediciones a LA
+// MISMA semana en menos de 2s se siguen agrupando en un solo envío, igual
+// que antes.
+const syncTimers = new Map();
+function guardarSemanaFirestoreDebounced(sNum) {
+  const id = 's' + (sNum !== undefined && sNum !== null ? sNum : semana);
+  clearTimeout(syncTimers.get(id));
+  syncTimers.set(id, setTimeout(() => guardarSemanaFirestore(sNum), 2000)); // 2s de inactividad, luego sube
+}
+// Fuerza el envío inmediato de toda subida pendiente (debounce) — antes
+// visibilitychange/pagehide solo revisaban el único 'syncTimer'; ahora hay
+// uno por semana en 'syncTimers', así que hay que vaciarlos todos para no
+// perder una edición reciente a alguna semana que no fuera la activa.
+function flushSyncPendiente() {
+  syncTimers.forEach((timer, id) => {
+    clearTimeout(timer);
+    guardarSemanaFirestore(parseInt(id.slice(1)));
+  });
+  syncTimers.clear();
 }
 
 // v17.2 — Botón "Guardar ahora": escritura DIRECTA a Firestore, sin
@@ -1293,10 +1358,17 @@ async function guardarAhoraDirecto() {
   }
 }
 
-async function guardarSemanaFirestore() {
+// FIX v22.10: acepta un número de semana explícito ('sNum'); sin él, usa
+// la semana activa ('semana') — mismo comportamiento de siempre para el
+// autoguardado periódico, visibilitychange/pagehide y guardar(). Lo nuevo
+// es que guardarSemana(s) (ver arriba) ahora puede pedir el guardado de
+// UNA semana específica que no es la activa (ej. catorcena asignada desde
+// Historial a una semana distinta a la abierta en captura).
+async function guardarSemanaFirestore(sNum) {
+  const s = (sNum !== undefined && sNum !== null) ? sNum : semana;
   if (!fbCodigo || !fbUid) { setSyncStatus('error'); return; } // sin sesion activa, no hay a donde escribir
   try {
-    const sd = semData(semana);
+    const sd = semData(s);
     // FIX v22.8: se agrega 'ultimaModificacion' con la hora del SERVIDOR de
     // Firestore (no la del dispositivo) en cada escritura de una semana.
     // 'congelado' (Date.now() local) sigue existiendo para lo que ya
@@ -1305,7 +1377,7 @@ async function guardarSemanaFirestore() {
     // dos está desfasado. 'ultimaModificacion' sí es confiable entre
     // dispositivos porque la pone el servidor, no el cliente.
     await db.collection('cuentas').doc(fbCodigo)
-             .collection('semanas').doc('s' + semana)
+             .collection('semanas').doc('s' + s)
              .set({ ...sd, ultimaModificacion: firebase.firestore.FieldValue.serverTimestamp() });
     // Última actividad + perfil (nivel/jornada): escritura aparte y NO
     // bloqueante — si falla, no debe tumbar el guardado real de la
@@ -1353,15 +1425,15 @@ setInterval(() => {
   if (fbCodigo && fbUid) guardarSemanaFirestore();
 }, 5000);
 
-// Se dispara si el usuario minimiza/cierra antes de que pase el debounce
+// Se dispara si el usuario minimiza/cierra antes de que pase el debounce.
+// FIX v22.10: usa flushSyncPendiente() (vacía TODOS los temporizadores
+// pendientes en 'syncTimers') en vez de solo revisar el 'syncTimer' único
+// que ya no existe — ver esa función arriba.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && syncTimer) {
-    clearTimeout(syncTimer);
-    guardarSemanaFirestore();
-  }
+  if (document.visibilityState === 'hidden') flushSyncPendiente();
 });
 window.addEventListener('pagehide', () => {
-  if (syncTimer) { clearTimeout(syncTimer); guardarSemanaFirestore(); }
+  flushSyncPendiente();
 });
 
 // getUserKey() ya no identifica al usuario (eso lo hace Firebase Auth con
@@ -2226,14 +2298,21 @@ function render() {
     <div class="scard" style="border-color:var(--red)"><div class="scard-lbl" style="color:var(--red)">1190 T.penado (recibo)</div><div class="scard-val" style="font-size:15px;color:var(--red)">$${tPrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:var(--gold);margin-top:4px">CCT: $${tPcct.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>
     <div class="scard hl"><div class="scard-lbl">Total a cobrar (recibo)</div><div class="scard-val">$${tSrec.toLocaleString('es-MX',{minimumFractionDigits:2})}</div><div style="font-size:10px;color:var(--gold);margin-top:4px">CCT: $${tS.toLocaleString('es-MX',{minimumFractionDigits:2})}</div></div>`;
 
-  guardar();
+  // FIX v22.9: antes era guardar() completo — ver arriba en la definición
+  // de guardarPosicion() por qué eso corrompía datos de otros dispositivos
+  // con solo entrar a ver la pantalla de captura.
+  guardarPosicion();
   renderHist();
   renderRefTasas();
 }
 
 function setCatorcena(s, val) {
   datos['s'+s].catorcena = parseInt(val) || 0;
-  guardar();
+  // FIX v22.10: antes llamaba a guardar() (siempre apunta a la semana
+  // activa). setCatorcena se usa desde Historial y 's' casi nunca es la
+  // semana abierta en captura — guardarSemana(s) congela y sube
+  // exactamente la semana 's' que se acaba de marcar.
+  guardarSemana(s);
 }
 
 function renderHist() {
@@ -2412,7 +2491,7 @@ function cambiarSemana(d) {
     return;
   }
   semana = nueva;
-  guardar();   // FIX: persiste la posicion (cte_semana) y la estructura creada al visitar
+  guardarPosicion();   // FIX v22.9: era guardar() completo — navegar de semana no es editarla, ver guardarPosicion()
   render();
 }
 function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; guardar(); render(); }   // FIX: mismo hoyo
