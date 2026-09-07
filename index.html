@@ -959,7 +959,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv25.1-quitaCampoSabana.html';
+const VERSION_ARCHIVO = 'controlTEv25.3-motorPorLineaPDF.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -3017,6 +3017,140 @@ function buscarConceptoConReferencia(pendientesTodas, pendientesRef, valueFn, ob
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// v25.3-motorPorLineaPDF: MOTOR DE COTEJO POR LÍNEA DE RECIBO (PDF)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Por qué existe: el motor de arriba (buscarConcepto/combinacionesQueCoinciden)
+// suma TODAS las líneas de un mismo concepto en un solo objetivo antes de
+// buscar — leerReciboPDF() colapsaba cada concepto (1130/1140/1180/1190) en
+// UN monto vía sumar(), descartando a qué fecha de referencia pertenecía
+// cada línea. Con 2+ fechas de referencia por concepto, esto obligaba a
+// buscar una COMBINACIÓN de semanas cuya suma diera el total combinado —
+// y cuando una de esas semanas reales ya estaba pagada/fuera de la bolsa,
+// la búsqueda caía al resto de tu historial completo y devolvía semanas
+// dispersas sin relación real (confirmado en vivo con la catorcena 04/06:
+// tocaba semanas 2,6,8,10,11 para un recibo que en realidad solo pagaba 2).
+//
+// Este motor nuevo, verificado contra tus 16 recibos reales y tus 36
+// semanas reales (extraídos en vivo de tu cuenta), asume la regla empírica
+// confirmada: CADA fecha de referencia del recibo corresponde a EXACTAMENTE
+// UNA semana — nunca a una suma de varias — y esa semana se identifica
+// comparando los 4 conceptos (1130/1140/1180/1190) a la vez, desempatando
+// por cercanía a la fecha de referencia impresa. Cuando dos+ líneas del
+// recibo compiten por las mismas semanas candidatas (pasa en recibos
+// reales — ej. catorcena 07 reimprime informativamente la fecha ya pagada
+// por catorcena 06), se resuelve como una asignación única: la pareja
+// línea-semana con la fecha más cercana gana primero, y a la línea que se
+// queda sin semana disponible se le reporta "sin coincidencia" (que es la
+// respuesta correcta cuando esa línea es en realidad una reimpresión de un
+// pago ya confirmado antes, no un pago nuevo).
+//
+// 'toleranciaAmplia' (el mismo campo/checkbox ya existente del recibo) NUNCA
+// se aplica a los 4 conceptos de una línea a la vez — verificado que hacerlo
+// así cuela semanas que no tienen relación real (varios conceptos "casi
+// cuadrando" por separado no es lo mismo que UN concepto mal capturado).
+// Solo se permite que A LO MÁS UN concepto de la línea exceda su tolerancia
+// estricta y quede cubierto por la amplia; los demás deben seguir cuadrando
+// exacto — así se replica el caso real confirmado (una comida mal contada:
+// un solo concepto fuera por ~$187.75, el resto exacto).
+
+const CAMPO_COT_POR_CLAVE = { '1130': 'te', '1140': 'importeComidas', '1180': 'tol', '1190': 'penRecibo' };
+const ETIQUETA_COT_POR_CLAVE = {
+  '1130': '1130 · T.E. ($)', '1140': '1140 · Comidas',
+  '1180': '1180 · Tolerancia', '1190': '1190 · T. penado (fórmula recibo)'
+};
+const TOL_ESTRICTA_COT_POR_CLAVE = { '1130': 2.00, '1140': 1.00, '1180': 2.00, '1190': 2.00 };
+
+function diasEntreCot(aISO, bISO) {
+  return Math.abs((new Date(aISO + 'T12:00') - new Date(bISO + 'T12:00')) / 86400000);
+}
+
+// encontrados: el objeto {'1130':[{fecha,monto}], ...} que ya produce
+// parsearConceptosPDF() — se agrupa por fecha de referencia, uniendo los
+// conceptos que comparten esa misma fecha en un solo "perfil objetivo".
+function agruparLineasPorReferencia(encontrados) {
+  const porRef = {};
+  ['1130', '1140', '1180', '1190'].forEach(clave => {
+    (encontrados[clave] || []).forEach(item => {
+      if (!porRef[item.fecha]) porRef[item.fecha] = {};
+      porRef[item.fecha][clave] = (porRef[item.fecha][clave] || 0) + item.monto;
+    });
+  });
+  return Object.keys(porRef).sort().map(ref => ({ ref, perfil: porRef[ref] }));
+}
+
+// pendientesTodas debe venir YA filtrada por excluirSemanasImplausibles
+// (nunca se cotejan semanas que terminan después de la fecha del recibo).
+function cotejarPorLineasPDF(lineasObjetivo, pendientesTodas, toleranciaAmplia) {
+  const lineas = lineasObjetivo.map((l, i) => ({
+    idx: i, ref: l.ref, perfil: l.perfil, claves: Object.keys(l.perfil),
+    match: null, diffs: null, conDiferencia: false, claveConDiferencia: null,
+    tipoDiferencia: null, empatabaCon: [], sinCoincidencia: false,
+    cercana: null, cercanaDiffMax: null
+  }));
+  const usadasSemanas = new Set();
+  const usadasLineas = new Set();
+
+  function intentarPasada(tolExtra) {
+    const pares = [];
+    const candidatosPorLinea = {};
+    lineas.forEach(l => {
+      if (usadasLineas.has(l.idx)) return;
+      pendientesTodas.forEach(s => {
+        if (usadasSemanas.has(s.key)) return;
+        const diffs = {};
+        let fueraDeTolerancia = 0;
+        let descartar = false;
+        for (const clave of l.claves) {
+          const campo = CAMPO_COT_POR_CLAVE[clave];
+          const d = Math.round((s[campo] - l.perfil[clave]) * 100) / 100;
+          diffs[clave] = d;
+          if (Math.abs(d) > TOL_ESTRICTA_COT_POR_CLAVE[clave]) {
+            if (tolExtra > 0 && Math.abs(d) <= TOL_ESTRICTA_COT_POR_CLAVE[clave] + tolExtra) fueraDeTolerancia++;
+            else descartar = true;
+          }
+        }
+        if (descartar || fueraDeTolerancia > 1) return;
+        const maxAbs = Math.max(...l.claves.map(c => Math.abs(diffs[c])));
+        const claveConDiferencia = l.claves.find(c => Math.abs(diffs[c]) > TOL_ESTRICTA_COT_POR_CLAVE[c]) || null;
+        pares.push({ linea: l, semana: s, diffs, maxAbs, dist: diasEntreCot(s.ini, l.ref), claveConDiferencia });
+        (candidatosPorLinea[l.idx] = candidatosPorLinea[l.idx] || []).push(s.numSem);
+      });
+    });
+    // Orden: primero por cercanía de fecha a la referencia del recibo (lo
+    // más determinante según los datos reales), luego por menor diferencia.
+    pares.sort((a, b) => (a.dist - b.dist) || (a.maxAbs - b.maxAbs));
+    for (const par of pares) {
+      if (usadasLineas.has(par.linea.idx) || usadasSemanas.has(par.semana.key)) continue;
+      par.linea.match = par.semana;
+      par.linea.diffs = par.diffs;
+      par.linea.conDiferencia = !!par.claveConDiferencia;
+      par.linea.claveConDiferencia = par.claveConDiferencia;
+      par.linea.tipoDiferencia = par.claveConDiferencia ? (par.diffs[par.claveConDiferencia] > 0 ? 'adeudo' : 'excedente') : null;
+      par.linea.empatabaCon = (candidatosPorLinea[par.linea.idx] || []).filter(n => n !== par.semana.numSem);
+      usadasLineas.add(par.linea.idx);
+      usadasSemanas.add(par.semana.key);
+    }
+  }
+
+  intentarPasada(0);
+  if (toleranciaAmplia > 0) intentarPasada(toleranciaAmplia);
+
+  lineas.forEach(l => {
+    if (l.match) return;
+    l.sinCoincidencia = true;
+    let mejor = null;
+    pendientesTodas.forEach(s => {
+      if (usadasSemanas.has(s.key)) return;
+      const maxAbs = Math.max(...l.claves.map(c => Math.abs(s[CAMPO_COT_POR_CLAVE[c]] - l.perfil[c])));
+      if (!mejor || maxAbs < mejor.maxAbs) mejor = { semana: s, maxAbs };
+    });
+    if (mejor) { l.cercana = mejor.semana; l.cercanaDiffMax = Math.round(mejor.maxAbs * 100) / 100; }
+  });
+
+  return { lineas, pendientes: pendientesTodas };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LECTOR DE PDF
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function extraerLineasPDF(file) {
@@ -3108,6 +3242,11 @@ window.leerReciboPDF = async function(event) {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  // v25.3-motorPorLineaPDF: invalida cualquier lectura de PDF anterior antes
+  // de procesar la nueva — igual que los campos de arriba, nunca se debe
+  // cotejar con los datos por línea de OTRO recibo.
+  window.__pdfLineasPorConcepto = null;
+  window.__pdfFechaExpedido = null;
 
   try {
     const lineas = await extraerLineasPDF(file);
@@ -3127,6 +3266,20 @@ window.leerReciboPDF = async function(event) {
     if (encontrados['1180'].length) document.getElementById('inp-1180').value = sumar(encontrados['1180']);
     if (encontrados['1190'].length) document.getElementById('inp-1190').value = sumar(encontrados['1190']);
     if (encontrados['1430'].length) document.getElementById('inp-1430').value = sumar(encontrados['1430']);
+
+    // v25.3-motorPorLineaPDF: ANTES de esta versión, aquí terminaba la
+    // información — cada concepto quedaba colapsado en un solo monto
+    // (sumar()) y ya no había forma de saber qué parte de ese monto le
+    // tocaba a cada fecha de referencia. Eso es lo que obligaba al
+    // Cotejador a adivinar con combinaciones de semanas en vez de
+    // encontrar la semana real de cada línea. Ahora se guarda 'encontrados'
+    // completo (con su fecha por línea) para que window.cotejarRecibo()
+    // pueda usar el motor por línea en vez del motor por combinaciones.
+    // Se invalida sola (ver los listeners más abajo) si el usuario edita a
+    // mano cualquiera de los campos de monto después de leer el PDF —
+    // nunca se coteja por línea contra un total que el usuario ya cambió.
+    window.__pdfLineasPorConcepto = encontrados;
+    window.__pdfFechaExpedido = fechaExpedidoDetectada;
 
     const todasFechas = ['1130','1140','1180','1190']
       .flatMap(c => encontrados[c].map(x => x.fecha))
@@ -3151,6 +3304,19 @@ window.leerReciboPDF = async function(event) {
     status.innerHTML = '❌ No se pudo leer este PDF. Ingresa los datos a mano.';
   }
 };
+
+// v25.3-motorPorLineaPDF: si el usuario edita A MANO cualquiera de los
+// campos que leerReciboPDF() acaba de llenar, los datos por línea guardados
+// arriba dejan de ser confiables (ya no describen lo que hay en el campo) y
+// se invalidan — window.cotejarRecibo() cae de vuelta al motor por
+// combinaciones (el mismo de siempre) para esos casos. La asignación
+// programática de leerReciboPDF() (`.value = ...`) NO dispara el evento
+// 'input', así que este listener solo reacciona a ediciones reales del
+// usuario, nunca a la propia lectura del PDF.
+['inp-1130','inp-1140','inp-1180','inp-1190'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', () => { window.__pdfLineasPorConcepto = null; });
+});
 
 let ultimoResultadoCotejo = null;
 
@@ -3399,6 +3565,156 @@ function renderResultadoCotejo(resultado) {
   }
 }
 
+// v25.3-motorPorLineaPDF: render para el motor nuevo (cotejarPorLineasPDF).
+// A petición explícita de Piver ("no quiero ver esto '1140 · Comidas✓...'
+// quiero ver los números reales tanto de recibo como de la app"), cada
+// concepto de cada línea/semana se muestra con su monto REAL de recibo y
+// su monto REAL calculado por ControlTE lado a lado (reutiliza las mismas
+// clases .val-recibo/.val-historial/.val-diff de la tabla-resumen v24.0,
+// que Piver nunca objetó) — no chips de solo ✓/✗.
+function renderResultadoCotejoPorLineas(resultado) {
+  const wrapLiq = document.getElementById('cotejo-liquidadas');
+  const wrapVol = document.getElementById('cotejo-voladas');
+  const aviso = document.getElementById('cotejo-aviso');
+  const resumenConceptos = document.getElementById('cotejo-resumen-conceptos');
+
+  const filasResumen = [];
+  const avisos = [];
+  resultado.lineas.forEach(l => {
+    l.claves.forEach(clave => {
+      const etiqueta = `${ETIQUETA_COT_POR_CLAVE[clave]} (ref. ${fDateCot(l.ref)})`;
+      if (l.sinCoincidencia) {
+        filasResumen.push({ etiqueta, objetivo: l.perfil[clave], estadoTxt: '❌ Sin coincidencia', estadoClase: 'err',
+          detalle: l.cercana ? `Más parecida: Sem ${l.cercana.numSem} (dif. máx. ${f$Cot(l.cercanaDiffMax)} en algún concepto) — no se aceptó, no cuadra dentro de tolerancia.` : 'No hay semanas pendientes con fecha plausible para comparar.' });
+      } else {
+        const calculado = l.match[CAMPO_COT_POR_CLAVE[clave]];
+        const esLaDiferencia = l.claveConDiferencia === clave;
+        const estadoTxt = esLaDiferencia
+          ? `🔵 ${l.tipoDiferencia === 'adeudo' ? 'Adeudo' : 'Excedente'} ${f$Cot(Math.abs(l.diffs[clave]))}`
+          : '✅ Coincide exacto';
+        filasResumen.push({ etiqueta, objetivo: l.perfil[clave], calculado, estadoTxt,
+          estadoClase: esLaDiferencia ? 'warn' : 'ok', detalle: `Sem ${l.match.numSem}.` });
+      }
+    });
+    if (l.empatabaCon && l.empatabaCon.length) {
+      avisos.push(`⚠️ La línea con fecha ref. <b>${fDateCot(l.ref)}</b> también cuadraba con Sem ${l.empatabaCon.join(', ')} — se eligió <b>Sem ${l.match.numSem}</b> por ser la fecha más cercana a la referencia del recibo. Si no es correcta, desmárcala abajo y avísame.`);
+    }
+    if (l.sinCoincidencia) {
+      avisos.push(`❌ La línea con fecha ref. <b>${fDateCot(l.ref)}</b> no cuadró con ninguna semana pendiente dentro de tolerancia — puede ser una reimpresión de un pago ya confirmado antes, o una semana con horas mal capturadas en la app.`);
+    }
+  });
+  aviso.innerHTML = avisos.join('<br><br>');
+  aviso.style.display = avisos.length ? 'block' : 'none';
+
+  resumenConceptos.innerHTML = filasResumen.map(f => `<div class="cotejo-row">
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="color:var(--ink);font-weight:600;">${f.etiqueta}</span>
+        ${f.detalle ? `<span style="font-size:10px;color:var(--mid);">${f.detalle}</span>` : ''}
+      </div>
+      <div class="vals">
+        <span class="val-recibo">Recibo ${f$Cot(f.objetivo)}</span>
+        ${f.calculado !== undefined ? `<span class="val-historial">Calculado ${f$Cot(f.calculado)}</span>` : ''}
+        <span class="val-diff ${f.estadoClase}">${f.estadoTxt}</span>
+      </div>
+    </div>`).join('');
+
+  const resueltas = resultado.lineas.filter(l => l.match);
+  let htmlLiq = '';
+  if (resueltas.length === 0) {
+    htmlLiq += `<div class="cotejo-card"><div class="cotejo-header no-match">Sin coincidencias</div><div class="no-historial">Ninguna línea del recibo coincidió con una semana pendiente dentro de tolerancia.</div></div>`;
+  } else {
+    htmlLiq += resueltas.map(l => {
+      const s = l.match;
+      const headerClase = l.conDiferencia ? 'diff' : 'match';
+      const badgeClase = l.conDiferencia ? 'diff' : 'ok';
+      const badgeTxt = l.conDiferencia ? 'Liquidada con diferencia' : 'Liquidada completa';
+      const icono = l.conDiferencia ? '🔵' : '✅';
+      const filasConcepto = l.claves.map(clave => {
+        const calculado = s[CAMPO_COT_POR_CLAVE[clave]];
+        const esLaDiferencia = l.claveConDiferencia === clave;
+        const estadoTxt = esLaDiferencia
+          ? `🔵 ${l.tipoDiferencia === 'adeudo' ? 'Adeudo' : 'Excedente'} ${f$Cot(Math.abs(l.diffs[clave]))}`
+          : '✅ Exacto';
+        return `<div class="cotejo-row">
+          <div style="color:var(--ink);font-weight:600;">${ETIQUETA_COT_POR_CLAVE[clave]}</div>
+          <div class="vals">
+            <span class="val-recibo">Recibo ${f$Cot(l.perfil[clave])}</span>
+            <span class="val-historial">Calculado ${f$Cot(calculado)}</span>
+            <span class="val-diff ${esLaDiferencia ? 'warn' : 'ok'}">${estadoTxt}</span>
+          </div>
+        </div>`;
+      }).join('');
+      return `<div class="cotejo-card" data-semana-key="${s.key}">
+        <div class="cotejo-header ${headerClase}">
+          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;flex:1;">
+            <input type="checkbox" class="chk-confirmar-semana" data-key="${s.key}" onchange="actualizarBotonConfirmarCotejo()" checked style="width:17px;height:17px;cursor:pointer;flex-shrink:0;">
+            <span>${icono} Semana ${s.numSem} — ${fDateCot(s.ini)} al ${fDateCot(s.fin)} <span style="font-weight:400;color:var(--mid);font-size:11px;">(línea con fecha ref. ${fDateCot(l.ref)})</span></span>
+          </label>
+          <span class="badge-match ${badgeClase}">${badgeTxt}</span>
+        </div>
+        <div class="cotejo-body" style="padding:10px 16px;">
+          ${filasConcepto}
+          ${l.empatabaCon && l.empatabaCon.length ? `<div class="tol-note">🟢 Esta línea también cuadraba con Sem ${l.empatabaCon.join(', ')} — se eligió esta por ser la fecha más cercana a la referencia del recibo.</div>` : ''}
+          ${l.conDiferencia ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">La diferencia arriba queda guardada en el Historial de esta semana para que la revises — no se descarta.</div>' : ''}
+          <div style="font-size:11px;color:var(--mid);margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule);">
+            ${s.horas} hrs · TE ${f$Cot(s.te)} · Comidas ${f$Cot(s.importeComidas)} ·
+            Tolerancia ${f$Cot(s.tol)} · Penado (CCT) ${f$Cot(s.penCCT)} ·
+            <b>Total semana ${f$Cot(s.totalSemana)}</b>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const sinCoincidencia = resultado.lineas.filter(l => l.sinCoincidencia);
+  const htmlSinMatch = sinCoincidencia.map(l => {
+    const montos = l.claves.map(c => `${ETIQUETA_COT_POR_CLAVE[c]}: ${f$Cot(l.perfil[c])}`).join(' · ');
+    const cercana = l.cercana
+      ? `Semana más parecida: <b>Sem ${l.cercana.numSem}</b> (${fDateCot(l.cercana.ini)} al ${fDateCot(l.cercana.fin)}), con una diferencia máxima de ${f$Cot(l.cercanaDiffMax)} en alguno de sus conceptos — no se aceptó automáticamente porque supera la tolerancia configurada.`
+      : 'No hay ninguna semana pendiente con fecha plausible para comparar (revisa que la fecha del recibo no sea anterior a tu semana más antigua capturada).';
+    return `<div class="cotejo-card"><div class="cotejo-header no-match">❌ Línea con fecha ref. ${fDateCot(l.ref)} — sin coincidencia dentro de tolerancia</div>
+      <div class="no-historial" style="text-align:left;padding:12px 16px;">Recibo: ${montos}. ${cercana}</div></div>`;
+  }).join('');
+
+  wrapLiq.innerHTML = htmlLiq + htmlSinMatch;
+
+  const clavesTocadas = new Set(resueltas.map(l => l.match.key));
+  const voladas = resultado.pendientes.filter(p => !clavesTocadas.has(p.key));
+  wrapVol.innerHTML = voladas.length === 0
+    ? `<div class="chip" style="display:inline-block;">✓ No quedaron semanas pendientes sin tocar por este recibo.</div>`
+    : voladas.map(p => `<div class="volada-item">
+        <b>Semana ${p.numSem}</b> — ${fDateCot(p.ini)} al ${fDateCot(p.fin)}<br>
+        ${p.horas} hrs · TE ${f$Cot(p.te)} · Comidas ${f$Cot(p.importeComidas)} ·
+        Tolerancia ${f$Cot(p.tol)} · Penado (CCT) ${f$Cot(p.penCCT)} ·
+        <b>Total semana ${f$Cot(p.totalSemana)}</b>
+      </div>`).join('');
+
+  // Mismo formato que renderResultadoCotejo() para que confirmarLiquidacionCotejo
+  // (sin cambios) funcione igual con cualquiera de los dos motores.
+  ultimoResultadoCotejo = {
+    semanasLiquidadas: resueltas.map(l => ({
+      semana: l.match,
+      diferencias: l.conDiferencia ? [{
+        concepto: ETIQUETA_COT_POR_CLAVE[l.claveConDiferencia],
+        calculado: l.match[CAMPO_COT_POR_CLAVE[l.claveConDiferencia]],
+        recibo: l.perfil[l.claveConDiferencia],
+        diff: Math.abs(l.diffs[l.claveConDiferencia]),
+        tipo: l.tipoDiferencia,
+        semanas: [l.match.numSem]
+      }] : []
+    }))
+  };
+  const btn = document.getElementById('btn-confirmar-cotejo');
+  const wrapConfirmar = document.getElementById('cotejo-confirmar-wrap');
+  if (resueltas.length > 0) {
+    wrapConfirmar.style.display = 'block';
+    document.getElementById('cotejo-confirm-status').textContent = '';
+    actualizarBotonConfirmarCotejo();
+  } else {
+    wrapConfirmar.style.display = 'none';
+  }
+}
+
 // FIX v25.0: recalcula el texto/estado del botón cada vez que el usuario
 // marca o desmarca una casilla de semana — el conteo y el habilitado ya no
 // son fijos al momento de cotejar, dependen de qué esté marcado AHORA.
@@ -3586,26 +3902,44 @@ window.cotejarRecibo = function() {
 
   const fechaAncla = fechaSabana || fechaCatorcena;
   const pendientes = excluirSemanasImplausibles(obtenerSemanasPendientesCot(nivel), fechaAncla);
-  const pendientesRef = pendientesCercaDeReferencia(pendientes, [fechaRefA, fechaRefB]);
-  const conceptos = [];
 
-  if (h1130 > 0) {
-    conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.horas, h1130, 0.25, fechaSabana, '1130 · T.E. (por horas)'));
-  } else if (m1130 > 0) {
-    conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.te, m1130, 2.00, fechaSabana, '1130 · T.E. ($)', toleranciaAmplia));
-  }
-  if (m1140 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.importeComidas, m1140, 1.00, fechaSabana, '1140 · Comidas', toleranciaAmplia));
-  if (m1180 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.tol, m1180, 2.00, fechaSabana, '1180 · Tolerancia', toleranciaAmplia));
-  if (m1190 > 0) {
-    let r = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penRecibo, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula recibo)', toleranciaAmplia);
-    if (r && r.sinCoincidencia && !r.demasiadoGrande) {
-      const rCCT = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penCCT, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula CCT)', toleranciaAmplia);
-      if (rCCT && !rCCT.sinCoincidencia) r = rCCT;
+  // v25.3-motorPorLineaPDF: si el recibo se leyó de un PDF (y el usuario no
+  // editó a mano los campos después, ver los listeners de leerReciboPDF) y
+  // trae al menos una línea 1130/1140/1180/1190 con su fecha de referencia,
+  // se usa el motor nuevo — cada línea del recibo se coteja por separado
+  // contra UNA sola semana (ver cotejarPorLineasPDF arriba). El motor viejo
+  // por combinaciones se conserva SIN TOCAR para captura manual (sin PDF) o
+  // para el caso de horas (h1130, que el PDF no trae) — Piver no pidió
+  // cambiar ese camino y tiene menos información disponible para el nuevo.
+  const usarMotorPorLineas = h1130 === 0 && window.__pdfLineasPorConcepto &&
+    ['1130','1140','1180','1190'].some(c => (window.__pdfLineasPorConcepto[c] || []).length > 0);
+
+  if (usarMotorPorLineas) {
+    const lineasObjetivo = agruparLineasPorReferencia(window.__pdfLineasPorConcepto);
+    const resultadoLineas = cotejarPorLineasPDF(lineasObjetivo, pendientes, toleranciaAmplia);
+    renderResultadoCotejoPorLineas(resultadoLineas);
+  } else {
+    const pendientesRef = pendientesCercaDeReferencia(pendientes, [fechaRefA, fechaRefB]);
+    const conceptos = [];
+
+    if (h1130 > 0) {
+      conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.horas, h1130, 0.25, fechaSabana, '1130 · T.E. (por horas)'));
+    } else if (m1130 > 0) {
+      conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.te, m1130, 2.00, fechaSabana, '1130 · T.E. ($)', toleranciaAmplia));
     }
-    conceptos.push(r);
-  }
+    if (m1140 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.importeComidas, m1140, 1.00, fechaSabana, '1140 · Comidas', toleranciaAmplia));
+    if (m1180 > 0) conceptos.push(buscarConceptoConReferencia(pendientes, pendientesRef, p => p.tol, m1180, 2.00, fechaSabana, '1180 · Tolerancia', toleranciaAmplia));
+    if (m1190 > 0) {
+      let r = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penRecibo, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula recibo)', toleranciaAmplia);
+      if (r && r.sinCoincidencia && !r.demasiadoGrande) {
+        const rCCT = buscarConceptoConReferencia(pendientes, pendientesRef, p => p.penCCT, m1190, 2.00, fechaSabana, '1190 · T. penado (fórmula CCT)', toleranciaAmplia);
+        if (rCCT && !rCCT.sinCoincidencia) r = rCCT;
+      }
+      conceptos.push(r);
+    }
 
-  renderResultadoCotejo({ conceptos: conceptos.filter(Boolean), pendientes });
+    renderResultadoCotejo({ conceptos: conceptos.filter(Boolean), pendientes });
+  }
 
   const refWrap = document.getElementById('cotejo-solo-referencia');
   const notasRef = [];
