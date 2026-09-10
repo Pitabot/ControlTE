@@ -959,7 +959,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv25.6-limiteDiasYCasillasPorSemana.html';
+const VERSION_ARCHIVO = 'controlTEv26.0-candidatoPorEliminacion.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1154,7 +1154,6 @@ function semData(s) {
   }
   return datos[k];
 }
-
 
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
@@ -3263,6 +3262,54 @@ function cotejarPorLineasPDF(lineasObjetivo, pendientesTodas, toleranciaAmplia) 
     if (mejor) { l.cercana = mejor.semana; l.cercanaDiffMax = Math.round(mejor.maxAbs * 100) / 100; }
   });
 
+  // NUEVO v26.0-candidatoPorEliminacion: cuando una línea no cuadra NI sola
+  // NI en combinación (por monto), se ofrece como ÚLTIMO RECURSO una semana
+  // pendiente para que el usuario decida a mano si de verdad es esa semana
+  // (con la diferencia que haga falta registrada como adeudo/excedente en
+  // cada concepto que no cuadre). NUNCA se marca sola: la casilla queda SIN
+  // marcar por default (a diferencia de las coincidencias por monto),
+  // siempre requiere que el usuario la revise y confirme a mano. Pedido
+  // explícito del usuario (caso real: catorcena 16 / semana 30 — la única
+  // semana con horas capturadas cerca de esa fecha, aunque le faltan horas
+  // por capturar), con una condición explícita suya: nunca considerar
+  // semanas viejas/lejanas sin relación con este recibo.
+  //
+  // FIX (detectado en pruebas antes de entregar, con datos reales): elegir
+  // la semana simplemente MÁS CERCANA EN FECHA es un error si hay varias
+  // semanas libres cerca — probado con catorcena 16 real: si además de la
+  // semana 30 también quedan libres semanas 28/29/31 (todas dentro de la
+  // ventana de fechas), la más cercana en fecha pura es semana 28 (2 días),
+  // pero su diferencia en monto es ENORME (~$2,093 en TE) comparada con la
+  // semana 30 (~$837, con tolerancia casi exacta) — hubiera sugerido la
+  // semana equivocada. Por eso el criterio real es: 1) descartar TODA
+  // semana fuera de la ventana MAX_DIAS_CANDIDATO_POR_FECHA (esto sí excluye
+  // las viejas/lejanas, como pidió el usuario) y 2) DENTRO de esa ventana,
+  // elegir la de MENOR diferencia máxima en monto (igual que 'cercana' más
+  // arriba) — la fecha filtra el universo razonable, el monto decide cuál
+  // es la mejor candidata dentro de ese universo, nunca al revés.
+  const MAX_DIAS_CANDIDATO_POR_FECHA = 60;
+  lineas.forEach(l => {
+    if (!l.sinCoincidencia) return;
+    let mejor = null;
+    pendientesTodas.forEach(s => {
+      if (usadasSemanas.has(s.key)) return;
+      const dist = diasEntreCot(s.fechaTieBreak || s.fin, l.ref);
+      if (dist > MAX_DIAS_CANDIDATO_POR_FECHA) return;
+      const maxAbs = Math.max(...l.claves.map(c => Math.abs(s[CAMPO_COT_POR_CLAVE[c]] - l.perfil[c])));
+      if (!mejor || maxAbs < mejor.maxAbs) mejor = { semana: s, dist, maxAbs };
+    });
+    if (mejor) {
+      const s = mejor.semana;
+      const diffs = {};
+      l.claves.forEach(c => {
+        diffs[c] = Math.round((s[CAMPO_COT_POR_CLAVE[c]] - l.perfil[c]) * 100) / 100;
+      });
+      l.candidatoPorFecha = s;
+      l.candidatoPorFechaDist = Math.round(mejor.dist);
+      l.candidatoPorFechaDiffs = diffs;
+    }
+  });
+
   return { lineas, pendientes: pendientesTodas };
 }
 
@@ -3730,6 +3777,9 @@ function renderResultadoCotejoPorLineas(resultado) {
     if (l.sinCoincidencia) {
       avisos.push(`❌ La línea con fecha ref. <b>${fDateCot(l.ref)}</b> no cuadró con ninguna semana ni combinación de hasta ${MAX_TAMANO_COMBINACION} semanas (separadas por hasta ${MAX_DIAS_ENTRE_SEMANAS_COMBO} días) dentro de tolerancia — puede ser una reimpresión de un pago ya confirmado antes, o una semana con horas mal capturadas en la app.`);
     }
+    if (l.candidatoPorFecha) {
+      avisos.push(`🟠 La línea con fecha ref. <b>${fDateCot(l.ref)}</b> no cuadró en monto, pero <b>Sem ${l.candidatoPorFecha.numSem}</b> es la semana pendiente más cercana en fecha (${l.candidatoPorFechaDist} días de distancia) — revisa la tarjeta naranja abajo antes de confirmarla, NO se marca sola.`);
+    }
   });
   aviso.innerHTML = avisos.join('<br><br>');
   aviso.style.display = avisos.length ? 'block' : 'none';
@@ -3814,6 +3864,45 @@ function renderResultadoCotejoPorLineas(resultado) {
     }).join('');
   }
 
+  // NUEVO v26.0-candidatoPorEliminacion: tarjeta interactiva (naranja, casilla
+  // SIN marcar por default) para la semana pendiente más cercana en fecha,
+  // cuando una línea no cuadró en monto. Ver cotejarPorLineasPDF() arriba —
+  // esto NUNCA se autoconfirma, es una sugerencia manual.
+  const conCandidatoPorFecha = resultado.lineas.filter(l => l.candidatoPorFecha);
+  const htmlCandidatos = conCandidatoPorFecha.map(l => {
+    const s = l.candidatoPorFecha;
+    const diffs = l.candidatoPorFechaDiffs;
+    const filas = l.claves.map(clave => {
+      const d = diffs[clave];
+      const fueraDeTolerancia = Math.abs(d) > TOL_ESTRICTA_COT_POR_CLAVE[clave];
+      const estadoTxt = !fueraDeTolerancia ? '✅ Exacto' : `🟠 ${d > 0 ? 'Adeudo' : 'Excedente'} ${f$Cot(Math.abs(d))}`;
+      return `<div class="cotejo-row">
+        <div style="color:var(--ink);font-weight:600;">${ETIQUETA_COT_POR_CLAVE[clave]}</div>
+        <div class="vals">
+          <span class="val-recibo">Recibo ${f$Cot(l.perfil[clave])}</span>
+          <span class="val-historial">Calculado ${f$Cot(s[CAMPO_COT_POR_CLAVE[clave]])}</span>
+          <span class="val-diff ${fueraDeTolerancia ? 'warn' : 'ok'}">${estadoTxt}</span>
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="cotejo-card" style="border-left:3px solid #b07d2a;" data-semana-key="${s.key}">
+      <div class="cotejo-header" style="background:#fff7e6;">
+        <span style="flex:1;">🟠 Candidato por eliminación — Sem ${s.numSem} (${fDateCot(s.ini)} al ${fDateCot(s.fin)}) <span style="font-weight:400;color:var(--mid);font-size:11px;">(línea con fecha ref. ${fDateCot(l.ref)}, a ${l.candidatoPorFechaDist} días de distancia)</span></span>
+        <span class="badge-match diff">No cuadra en monto</span>
+      </div>
+      <div class="cotejo-body" style="padding:10px 16px;">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:10px;">
+          <input type="checkbox" class="chk-confirmar-semana" data-key="${s.key}" onchange="actualizarBotonConfirmarCotejo()" style="width:17px;height:17px;cursor:pointer;flex-shrink:0;">
+          <span>Confirmar de todas formas — es la semana pendiente más cercana a esta fecha, aunque no cuadre en monto</span>
+        </label>
+        ${filas}
+        <div style="font-size:11px;color:var(--mid);margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule);">
+          No es una coincidencia por monto — es la semana pendiente MÁS CERCANA en fecha a la referencia del recibo, entre las que aún no se han pagado. Revisa que de verdad sean las horas que trabajaste esos días antes de confirmar; las diferencias marcadas arriba quedan guardadas en el Historial de esta semana.
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
   const sinCoincidencia = resultado.lineas.filter(l => l.sinCoincidencia);
   const htmlSinMatch = sinCoincidencia.map(l => {
     const montos = l.claves.map(c => `${ETIQUETA_COT_POR_CLAVE[c]}: ${f$Cot(l.perfil[c])}`).join(' · ');
@@ -3824,7 +3913,7 @@ function renderResultadoCotejoPorLineas(resultado) {
       <div class="no-historial" style="text-align:left;padding:12px 16px;">Recibo: ${montos}. ${cercana}</div></div>`;
   }).join('');
 
-  wrapLiq.innerHTML = htmlLiq + htmlSinMatch;
+  wrapLiq.innerHTML = htmlLiq + htmlCandidatos + htmlSinMatch;
 
   const clavesTocadas = new Set();
   resueltas.forEach(l => semanasDeLinea(l).forEach(s => clavesTocadas.add(s.key)));
@@ -3845,6 +3934,11 @@ function renderResultadoCotejoPorLineas(resultado) {
   // marcarse pagado por separado) — la diferencia (si hay) se guarda solo en
   // la primera, listando TODAS las semanas de la combinación en su campo
   // 'semanas', igual que ya hacía el motor viejo para sus propias sumas.
+  // NUEVO v26.0-candidatoPorEliminacion: cada candidato-por-fecha aporta su
+  // propia entrada a semanasLiquidadas (misma forma que las demás), con UNA
+  // diferencia por CADA concepto que se salga de tolerancia (aquí puede ser
+  // más de uno — a diferencia de las coincidencias por monto, que ya
+  // garantizan que a lo más un concepto difiere).
   ultimoResultadoCotejo = {
     semanasLiquidadas: resueltas.flatMap(l => {
       const semanas = semanasDeLinea(l);
@@ -3859,11 +3953,25 @@ function renderResultadoCotejoPorLineas(resultado) {
           semanas: semanas.map(x => x.numSem)
         }] : []
       }));
-    })
+    }).concat(conCandidatoPorFecha.map(l => {
+      const s = l.candidatoPorFecha;
+      const diffs = l.candidatoPorFechaDiffs;
+      const diferencias = l.claves
+        .filter(c => Math.abs(diffs[c]) > TOL_ESTRICTA_COT_POR_CLAVE[c])
+        .map(c => ({
+          concepto: ETIQUETA_COT_POR_CLAVE[c],
+          calculado: s[CAMPO_COT_POR_CLAVE[c]],
+          recibo: l.perfil[c],
+          diff: Math.abs(diffs[c]),
+          tipo: diffs[c] > 0 ? 'adeudo' : 'excedente',
+          semanas: [s.numSem]
+        }));
+      return { semana: s, diferencias };
+    }))
   };
   const btn = document.getElementById('btn-confirmar-cotejo');
   const wrapConfirmar = document.getElementById('cotejo-confirmar-wrap');
-  if (resueltas.length > 0) {
+  if (resueltas.length > 0 || conCandidatoPorFecha.length > 0) {
     wrapConfirmar.style.display = 'block';
     document.getElementById('cotejo-confirm-status').textContent = '';
     actualizarBotonConfirmarCotejo();
