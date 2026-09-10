@@ -1,4 +1,4 @@
-7<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -959,7 +959,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv25.5-motorHibridoConCombinaciones.html';
+const VERSION_ARCHIVO = 'controlTEv25.6-limiteDiasYCasillasPorSemana.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1154,6 +1154,7 @@ function semData(s) {
   }
   return datos[k];
 }
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyBTPG4Z8AqYA3oTprKfyt-_cXpT-CC-wio",
@@ -3066,6 +3067,15 @@ function diasEntreCot(aISO, bISO) {
   return Math.abs((new Date(aISO + 'T12:00') - new Date(bISO + 'T12:00')) / 86400000);
 }
 
+// NUEVO v25.6: separación máxima (en días) entre la semana más antigua y la
+// más reciente dentro de UNA MISMA combinación — evita que el buscador junte
+// semanas sin relación real solo porque la suma numérica cuadra (una
+// catorcena real dura 14 días; combos separados por meses son casi siempre
+// coincidencia numérica, no un pago agrupado real). Confirmado con un caso
+// real del cotejador: "Sem 18+2" (separadas ~4 meses) cuadraba en monto por
+// pura casualidad.
+const MAX_DIAS_ENTRE_SEMANAS_COMBO = 40;
+
 // encontrados: el objeto {'1130':[{fecha,monto}], ...} que ya produce
 // parsearConceptosPDF() — se agrupa por fecha de referencia, uniendo los
 // conceptos que comparten esa misma fecha en un solo "perfil objetivo".
@@ -3162,6 +3172,13 @@ function cotejarPorLineasPDF(lineasObjetivo, pendientesTodas, toleranciaAmplia) 
       if (sumaActual > objetivoBase + tolBase + 1e-6) return; // poda (valores no-negativos)
       if (elegidos.length >= 2) {
         const combo = elegidos.map(i => pool[i]);
+        // NUEVO v25.6: descarta (y deja de extender) cualquier combo cuyas
+        // semanas abarquen más de MAX_DIAS_ENTRE_SEMANAS_COMBO días — agregar
+        // más semanas solo puede IGUALAR o AUMENTAR esa separación, nunca
+        // reducirla, así que se corta la rama completa aquí mismo.
+        const inisOrdenados = combo.map(s => s.ini).sort();
+        const spanDias = diasEntreCot(inisOrdenados[0], inisOrdenados[inisOrdenados.length - 1]);
+        if (spanDias > MAX_DIAS_ENTRE_SEMANAS_COMBO) return;
         const diffs = {};
         let fueraDeTolerancia = 0, descartar = false;
         for (const clave of linea.claves) {
@@ -3708,10 +3725,10 @@ function renderResultadoCotejoPorLineas(resultado) {
       avisos.push(`⚠️ La línea con fecha ref. <b>${fDateCot(l.ref)}</b> también cuadraba con Sem ${l.empatabaCon.join(', ')} — se eligió <b>Sem ${semanas.map(s => s.numSem).join('+')}</b> por ser la fecha más cercana a la referencia del recibo. Si no es correcta, desmárcala abajo y avísame.`);
     }
     if (semanas.length > 1) {
-      avisos.push(`🟣 La línea con fecha ref. <b>${fDateCot(l.ref)}</b> no cuadró con NINGUNA semana sola, así que se buscó una combinación — se resolvió sumando <b>${semanas.length} semanas (Sem ${semanas.map(s => s.numSem).join(' + ')})</b>. Revisa que tenga sentido antes de confirmar.`);
+      avisos.push(`🟣 La línea con fecha ref. <b>${fDateCot(l.ref)}</b> no cuadró con NINGUNA semana sola, así que se buscó una combinación (semanas separadas por hasta ${MAX_DIAS_ENTRE_SEMANAS_COMBO} días entre sí) — se resolvió sumando <b>${semanas.length} semanas (Sem ${semanas.map(s => s.numSem).join(' + ')})</b>. Cada semana tiene su propia casilla abajo — si alguna no te convence, desmárcala sin afectar las demás.`);
     }
     if (l.sinCoincidencia) {
-      avisos.push(`❌ La línea con fecha ref. <b>${fDateCot(l.ref)}</b> no cuadró con ninguna semana ni combinación de hasta ${MAX_TAMANO_COMBINACION} semanas pendientes dentro de tolerancia — puede ser una reimpresión de un pago ya confirmado antes, o una semana con horas mal capturadas en la app.`);
+      avisos.push(`❌ La línea con fecha ref. <b>${fDateCot(l.ref)}</b> no cuadró con ninguna semana ni combinación de hasta ${MAX_TAMANO_COMBINACION} semanas (separadas por hasta ${MAX_DIAS_ENTRE_SEMANAS_COMBO} días) dentro de tolerancia — puede ser una reimpresión de un pago ya confirmado antes, o una semana con horas mal capturadas en la app.`);
     }
   });
   aviso.innerHTML = avisos.join('<br><br>');
@@ -3759,21 +3776,36 @@ function renderResultadoCotejoPorLineas(resultado) {
       const etiquetaSemanas = semanas.length > 1 ? `Semanas ${semanas.map(s => s.numSem).join(' + ')}` : `Semana ${semanas[0].numSem}`;
       const rangoFechas = semanas.map(s => `${fDateCot(s.ini)} al ${fDateCot(s.fin)}`).join(' · ');
       const notaSuma = semanas.length > 1 ? `, suma de ${semanas.length} semanas` : '';
+      // NUEVO v25.6: cuando la línea se resolvió con VARIAS semanas (combo),
+      // cada semana lleva SU PROPIA casilla — el usuario puede desmarcar una
+      // sola semana que le parezca improbable (ej. muy separada en el tiempo)
+      // sin tener que rechazar todo el combo. Con una sola semana se deja una
+      // única casilla, igual que antes.
+      const casillasSemanas = semanas.length > 1
+        ? `<div style="display:flex;flex-direction:column;gap:7px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed var(--rule);">
+            <span style="font-size:11px;color:var(--mid);">Esta línea se resolvió sumando varias semanas — si alguna no te convence, desmárcala sin afectar las demás:</span>
+            ${semanas.map(s => `<label style="display:flex;align-items:center;gap:9px;cursor:pointer;">
+              <input type="checkbox" class="chk-confirmar-semana" data-key="${s.key}" onchange="actualizarBotonConfirmarCotejo()" checked style="width:17px;height:17px;cursor:pointer;flex-shrink:0;">
+              <span>Semana ${s.numSem} — ${fDateCot(s.ini)} al ${fDateCot(s.fin)}</span>
+            </label>`).join('')}
+          </div>`
+        : `<label style="display:flex;align-items:center;gap:9px;cursor:pointer;margin-bottom:10px;">
+            <input type="checkbox" class="chk-confirmar-semana" data-key="${semanas[0].key}" onchange="actualizarBotonConfirmarCotejo()" checked style="width:17px;height:17px;cursor:pointer;flex-shrink:0;">
+            <span>Marcar Semana ${semanas[0].numSem} como pagada</span>
+          </label>`;
       const statsDetalle = semanas.map(s =>
         `${semanas.length > 1 ? `Sem ${s.numSem}: ` : ''}${s.horas} hrs · TE ${f$Cot(s.te)} · Comidas ${f$Cot(s.importeComidas)} · Tolerancia ${f$Cot(s.tol)} · Penado (CCT) ${f$Cot(s.penCCT)} · <b>Total ${f$Cot(s.totalSemana)}</b>`
       ).join('<br>');
       return `<div class="cotejo-card" data-semana-key="${dataKeys}">
         <div class="cotejo-header ${headerClase}">
-          <label style="display:flex;align-items:center;gap:9px;cursor:pointer;flex:1;">
-            <input type="checkbox" class="chk-confirmar-semana" data-key="${dataKeys}" onchange="actualizarBotonConfirmarCotejo()" checked style="width:17px;height:17px;cursor:pointer;flex-shrink:0;">
-            <span>${icono} ${etiquetaSemanas} — ${rangoFechas} <span style="font-weight:400;color:var(--mid);font-size:11px;">(línea con fecha ref. ${fDateCot(l.ref)}${notaSuma})</span></span>
-          </label>
+          <span style="flex:1;">${icono} ${etiquetaSemanas} — ${rangoFechas} <span style="font-weight:400;color:var(--mid);font-size:11px;">(línea con fecha ref. ${fDateCot(l.ref)}${notaSuma})</span></span>
           <span class="badge-match ${badgeClase}">${badgeTxt}</span>
         </div>
         <div class="cotejo-body" style="padding:10px 16px;">
+          ${casillasSemanas}
           ${filasConcepto}
           ${l.empatabaCon && l.empatabaCon.length ? `<div class="tol-note">🟢 Esta línea también cuadraba con Sem ${l.empatabaCon.join(', ')} — se eligió esta por ser la fecha más cercana a la referencia del recibo.</div>` : ''}
-          ${l.conDiferencia ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">La diferencia arriba queda guardada en el Historial de esta semana para que la revises — no se descarta.</div>' : ''}
+          ${l.conDiferencia ? '<div style="font-size:11px;color:var(--mid);margin-top:6px;">La diferencia arriba queda guardada en el Historial de la primera semana de esta línea para que la revises — no se descarta (si desmarcas justo esa semana, la diferencia no se guarda en ninguna).</div>' : ''}
           <div style="font-size:11px;color:var(--mid);margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule);">
             ${statsDetalle}
           </div>
@@ -3860,10 +3892,13 @@ window.confirmarLiquidacionCotejo = async function() {
   // las semanas tocadas por el recibo, no solo las "completas" — lo que
   // realmente se confirma es nada más lo que el usuario dejó marcado en
   // pantalla (ver las casillas .chk-confirmar-semana de cada tarjeta).
-  // FIX v25.5: una casilla de línea resuelta con VARIAS semanas (combinación)
-  // trae 'data-key' con varias claves separadas por coma (ver cotejo-card
-  // arriba) — se separan aquí para que las 2+ semanas de esa línea se
-  // confirmen/rechacen siempre juntas, nunca a medias.
+  // FIX v25.5: se soportaba 'data-key' con varias claves separadas por coma
+  // para una línea resuelta con VARIAS semanas (combinación), confirmando
+  // siempre las 2+ semanas juntas.
+  // FIX v25.6: ahora cada semana de una combinación trae su PROPIA casilla
+  // con 'data-key' de una sola clave (ver cotejo-card arriba) — el split(',')
+  // se deja por compatibilidad (no le hace daño a una clave sin comas) y
+  // permite que el usuario confirme unas semanas del combo y rechace otras.
   const clavesMarcadas = new Set();
   document.querySelectorAll('.chk-confirmar-semana:checked').forEach(chk => {
     chk.dataset.key.split(',').forEach(k => clavesMarcadas.add(k));
