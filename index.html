@@ -925,25 +925,66 @@ function copiarUid() {
 
 <script>
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// TABULADOR NIVEL 8–35  (Anexo 1, ago 2025)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const TAB = {
-   8:180.01,  9:181.00, 10:181.85, 11:182.74, 12:186.50,
-  13:195.79, 14:205.49, 15:215.78, 16:221.68, 17:232.26,
-  18:244.02, 19:255.21, 20:265.34, 21:276.08, 22:285.72,
-  23:295.64, 24:305.31, 25:310.40, 26:326.12, 27:340.30,
-  28:353.52, 29:367.60, 30:382.90, 31:398.51, 32:414.07,
-  33:430.77, 34:448.11, 35:467.73
-};
-// Ayuda Renta de Casa por nivel (Anexo 1, ago 2025)
-const ARC = {
-   8:63.76,   9:71.26,  10:73.24,  11:74.73,  12:77.27,
-  13:90.79,  14:101.75, 15:112.61, 16:116.52, 17:116.56,
-  18:116.57, 19:116.58, 20:116.59, 21:116.60, 22:116.64,
-  23:116.65, 24:116.66, 25:122.91, 26:129.95, 27:140.86,
-  28:151.03, 29:159.68, 30:166.34, 31:166.36, 32:166.37,
-  33:166.38, 34:166.39, 35:171.83
-};
+// TABULADOR NIVEL 8–35 — HISTÓRICO POR FECHA DE VIGENCIA (Anexo 1)
+// v27.0-tabuladorAgo2026: antes TAB/ARC eran una sola tabla plana, así
+// que un aumento salarial nuevo recalculaba TODO (incluyendo semanas
+// pasadas capturadas después del aumento, que aún no tenían snapshot).
+// Ahora cada tabla vive en un historial con su fecha de vigencia
+// ('desde'), y TABv(nivel, fechaISO)/ARCv(nivel, fechaISO) devuelven la
+// que corresponde a esa fecha — nunca la de "hoy". Para dar de alta un
+// futuro aumento: agrega una entrada nueva al final de TAB_HIST (y de
+// ARC_HIST si también cambia la Ayuda Renta de Casa) con su fecha
+// 'desde'; no toques las entradas anteriores.
+const TAB_HIST = [
+  { desde: '2025-08-01', tabla: {
+     8:180.01,  9:181.00, 10:181.85, 11:182.74, 12:186.50,
+    13:195.79, 14:205.49, 15:215.78, 16:221.68, 17:232.26,
+    18:244.02, 19:255.21, 20:265.34, 21:276.08, 22:285.72,
+    23:295.64, 24:305.31, 25:310.40, 26:326.12, 27:340.30,
+    28:353.52, 29:367.60, 30:382.90, 31:398.51, 32:414.07,
+    33:430.77, 34:448.11, 35:467.73
+  }},
+  { desde: '2026-08-01', tabla: {
+     8:187.21,  9:188.24, 10:189.12, 11:190.05, 12:193.96,
+    13:203.62, 14:213.71, 15:224.41, 16:230.55, 17:241.55,
+    18:253.78, 19:265.42, 20:275.95, 21:287.12, 22:297.15,
+    23:307.47, 24:317.52, 25:322.82, 26:339.16, 27:353.91,
+    28:367.66, 29:382.30, 30:398.22, 31:414.45, 32:430.63,
+    33:448.00, 34:466.03, 35:486.44
+  }}
+];
+// Ayuda Renta de Casa por nivel (Anexo 1) — mismo patrón de historial;
+// hoy solo hay una tabla vigente porque este aumento (ago 2026) no trajo
+// cambio de ARC. Si algún día cambia, se agrega una entrada nueva igual
+// que en TAB_HIST.
+const ARC_HIST = [
+  { desde: '2025-08-01', tabla: {
+     8:63.76,   9:71.26,  10:73.24,  11:74.73,  12:77.27,
+    13:90.79,  14:101.75, 15:112.61, 16:116.52, 17:116.56,
+    18:116.57, 19:116.58, 20:116.59, 21:116.60, 22:116.64,
+    23:116.65, 24:116.66, 25:122.91, 26:129.95, 27:140.86,
+    28:151.03, 29:159.68, 30:166.34, 31:166.36, 32:166.37,
+    33:166.38, 34:166.39, 35:171.83
+  }}
+];
+// Devuelve la tabla (TAB_HIST o ARC_HIST) vigente en fechaISO ('YYYY-MM-DD'):
+// la última entrada cuyo 'desde' sea <= fechaISO. Nunca filtra por "hoy".
+function tablaVigente(hist, fechaISO) {
+  let elegida = hist[0];
+  for (const h of hist) { if (h.desde <= fechaISO) elegida = h; else break; }
+  return elegida.tabla;
+}
+function TABv(niv, fechaISO) { return tablaVigente(TAB_HIST, fechaISO)[niv]; }
+function ARCv(niv, fechaISO) { return tablaVigente(ARC_HIST, fechaISO)[niv]; }
+function hoyISO() { return new Date().toISOString().slice(0,10); }
+// TAB/ARC se conservan como la tabla vigente HOY, para todo lo que ya
+// mostraba "la tasa actual" (chip del header, pestaña Referencia, lista
+// del selector de nivel) — esos usos siguen igual, sin tocarlos uno por
+// uno, porque hoy siempre corresponde a la última tabla del historial.
+// Lo único que se corrigió para usar TABv/ARCv con la fecha REAL de cada
+// semana es el snapshot (semData) y el respaldo del Cotejador — ver abajo.
+const TAB = tablaVigente(TAB_HIST, hoyISO());
+const ARC = tablaVigente(ARC_HIST, hoyISO());
 const TASA_COMIDA = 187.75;
 const TOL_PCT     = 0.123;
 const TTOL = {2:0,4:20,5:40,6:60,7:80,8:100,9:120,10:140,
@@ -959,7 +1000,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv26.0-candidatoPorEliminacion.html';
+const VERSION_ARCHIVO = 'controlTEv27.0-tabuladorAgo2026.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1136,8 +1177,8 @@ function semData(s) {
       // esta semana. Esto evita que un incremento salarial futuro recalcule
       // (y por tanto altere) el monto que correspondía a semanas ya pasadas.
       nivelSnap: nivel,
-      salSnap:   TAB[nivel],
-      arcSnap:   ARC[nivel],
+      salSnap:   TABv(nivel, ini.toISOString().slice(0,10)),
+      arcSnap:   ARCv(nivel, ini.toISOString().slice(0,10)),
       dias: Array.from({length:7}, (_,i) => {
         const d = new Date(ini); d.setDate(d.getDate()+i);
         const iso = d.toISOString().slice(0,10);
@@ -1149,8 +1190,9 @@ function semData(s) {
     // salario real de ese momento, así que usamos el actual como mejor
     // aproximación disponible y lo dejamos fijo desde ahora en adelante.
     datos[k].nivelSnap = datos[k].nivelSnap ?? nivel;
-    datos[k].salSnap   = TAB[datos[k].nivelSnap];
-    datos[k].arcSnap   = ARC[datos[k].nivelSnap];
+    const iniMigISO    = semInicio(s).toISOString().slice(0,10);
+    datos[k].salSnap   = TABv(datos[k].nivelSnap, iniMigISO);
+    datos[k].arcSnap   = ARCv(datos[k].nivelSnap, iniMigISO);
   }
   return datos[k];
 }
@@ -2720,8 +2762,9 @@ function calcSemanaCot(sd, nivelFallback) {
   // Usa el snapshot de la semana si existe (semanas capturadas con el
   // arreglo de sync ya aplicado); si es una semana vieja sin snapshot,
   // cae al nivel seleccionado en el Cotejador como mejor aproximación.
-  const salSnap = sd.salSnap !== undefined ? sd.salSnap : TAB[nivelFallback];
-  const arcSnap = sd.arcSnap !== undefined ? sd.arcSnap : ARC[nivelFallback];
+  const fechaRefFallback = (sd.dias && sd.dias[0]) ? sd.dias[0].fecha : hoyISO();
+  const salSnap = sd.salSnap !== undefined ? sd.salSnap : TABv(nivelFallback, fechaRefFallback);
+  const arcSnap = sd.arcSnap !== undefined ? sd.arcSnap : ARCv(nivelFallback, fechaRefFallback);
   const jornadaSnap = localStorage.getItem('cte_jornada') || '00';
   let tH=0, tTE=0, tC=0, tIC=0, tTET=0, tPcct=0, tPrec=0, horasAcum=0;
   sd.dias.forEach(d => {
