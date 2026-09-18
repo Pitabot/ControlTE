@@ -996,11 +996,8 @@ const FEST = new Set([
   '2026-10-12','2026-11-01','2026-11-02',
   '2026-11-16','2026-12-25'
 ]);
-// v16.0: ÚNICO lugar donde vive el nombre de versión — el footer lo lee
-// de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
-// queda correcto automáticamente (antes se escribía aparte y se
-// desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv27.1-fixSalarioDiarioPorSemana.html';
+
+const VERSION_ARCHIVO = 'controlTEv27.2-fixRetroactivoSemanasNoPagadas.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1024,11 +1021,7 @@ function licenciaActiva() {
   return Date.now() < lic.expira;
 }
 
-// Verifica en Firestore si expira (la fecha real, controlada solo por el
-// admin) ya pasó. Nota: aunque esta funcion fallara o nunca corriera, las
-// reglas de "semanas" YA rechazan lectura/escritura cuando expira venció
-// — esto es solo para avisarle al usuario con un mensaje claro, en vez de
-// dejarlo adivinando por qué de repente nada guarda.
+
 async function verificarRevocacion() {
   if (!fbCodigo) return;
   try {
@@ -1057,19 +1050,7 @@ function diasRestantes() {
   return Math.max(0, Math.ceil((lic.expira - Date.now()) / 86400000));
 }
 
-// Clientes que ya tenían una licencia local (cte_lic) válida ANTES de esta
-// versión con Firebase nunca pasan por validarCodigo() — licenciaActiva()
-// ya da true con lo que tenían guardado, así que jamás ven el paywall y
-// jamás se les escribe el uid en Firestore. Para ellos, la cuenta queda
-// visible en el panel admin como "Sin activar" aunque sí estén usando la
-// app, y nunca se respalda su historial en la nube.
-//
-// Esta función corre una sola vez al cargar la app: si detecta una
-// licencia local vigente cuyo código nunca fue registrado en Firestore
-// para este dispositivo, lo registra sola, sin pedir teléfono — porque
-// ya demostró ser el dueño legítimo al tener una licencia local vigente
-// para ese código específico (no es un desconocido activando por primera
-// vez, es un cliente conocido "sincronizando" tarde).
+
 async function intentarAutoRegistro() {
   const lic = getLicencia();
   if (!lic || !lic.code || !licenciaActiva()) return false;
@@ -1193,6 +1174,35 @@ function semData(s) {
     const iniMigISO    = semInicio(s).toISOString().slice(0,10);
     datos[k].salSnap   = TABv(datos[k].nivelSnap, iniMigISO);
     datos[k].arcSnap   = ARCv(datos[k].nivelSnap, iniMigISO);
+  }
+  // FIX v27.2 — bug real reportado: semana 37 seguía en $276.08 (tabla
+  // vieja) aunque su fecha (07-sep-2026) ya calificaba para el aumento del
+  // 1-ago-2026, y semana 38 mostraba $295.64, un monto que no corresponde
+  // a NINGÚN nivel de la tabla vigente. Causa: salSnap/arcSnap/nivelSnap se
+  // congelaban desde el primer TOQUE de la semana (crearla o abrirla), no
+  // desde que se PAGA — pero el aumento de PEMEX es retroactivo a su fecha
+  // de vigencia, así que una semana aún no pagada debe seguir recibiendo la
+  // tabla correcta aunque se haya tocado antes de que esa tabla existiera
+  // (ambas semanas 37/38 se habían abierto antes de la FIX v27.0). Mientras
+  // pagado !== true, esta función ahora realinea en cada llamada: nivelSnap
+  // se actualiza al nivel actualmente seleccionado (esto también autocorrige
+  // una semana que hubiera quedado con un nivel equivocado por un toque
+  // accidental al selector — el caso exacto de la semana 38, congelada en
+  // nivel 23 en vez de 21) y salSnap/arcSnap se recalculan con TABv/ARCv
+  // contra la fecha de inicio de esa semana. En cuanto se marca "pagado"
+  // (confirmarLiquidacionCotejo), se deja de tocar y queda fija para
+  // siempre — igual que antes.
+  // OJO / visión a futuro: esto asume que el nivel del trabajador NO cambia
+  // de forma retroactiva (un ascenso real solo debería aplicar hacia
+  // adelante). Si algún día hay un cambio real de nivel con semanas viejas
+  // AÚN sin marcar "pagado", márcalas como pagadas ANTES de cambiar el
+  // nivel en el selector — o avísame para agregar un candado de fecha por
+  // nivel en vez de este realineo simple.
+  if (datos[k].pagado !== true) {
+    datos[k].nivelSnap = nivel;
+    const iniLiveISO = semInicio(s).toISOString().slice(0,10);
+    datos[k].salSnap  = TABv(datos[k].nivelSnap, iniLiveISO);
+    datos[k].arcSnap  = ARCv(datos[k].nivelSnap, iniLiveISO);
   }
   return datos[k];
 }
@@ -2424,7 +2434,10 @@ function renderHist() {
     return;
   }
   sems.forEach(s => {
-    const sd = datos['s'+s]; let tH=0, tS=0, tSrec=0;
+    // FIX v27.2: antes leía datos['s'+s] directo — se saltaba el realineo
+    // en vivo de semData() para semanas no pagadas, así que Historial podía
+    // mostrar un total distinto al que ya se veía correcto en Captura.
+    const sd = semData(s); let tH=0, tS=0, tSrec=0;
     sd.dias.forEach(d => {
       if (d.montoSnap) {
         tH += d.horas||0; tS += d.montoSnap.sub;
@@ -2849,7 +2862,16 @@ function excluirSemanasImplausibles(pendientes, fechaAncla) {
 function obtenerSemanasPendientesCot(nivelFallback) {
   const lista = [];
   Object.keys(datos).forEach(key => {
-    const sd = datos[key];
+    // FIX v27.2: antes leía datos[key] directo, sin pasar por semData() —
+    // se saltaba el realineo en vivo de salSnap/arcSnap/nivelSnap para
+    // semanas no pagadas (ver semData()), así que el Cotejador podía seguir
+    // ofreciendo/cotejando con montos viejos aunque Captura ya mostrara el
+    // monto correcto. Guardia de formato: 'datos' solo debe contener claves
+    // de semana ('sNNN'); si alguna vez no lo fuera, mejor ignorarla que
+    // dejar que semData() cree una semana fantasma con numSem = NaN.
+    if (!/^s\d+$/.test(key)) return;
+    const numSem = parseInt(key.slice(1));
+    const sd = semData(numSem);
     if (!sd || !sd.dias || sd.dias.length === 0) return;
     if (sd.pagado === true) return; // ya liquidada, fuera de la bolsa
     const totalHoras = sd.dias.reduce((s, d) => s + (d.horas || 0), 0);
@@ -2857,7 +2879,7 @@ function obtenerSemanasPendientesCot(nivelFallback) {
     const c = calcSemanaCot(sd, nivelFallback);
     lista.push({
       key,
-      numSem: parseInt(key.slice(1)),
+      numSem,
       ini: sd.dias[0].fecha,
       fin: sd.dias[6].fecha,
       // Fecha de referencia para el desempate por proximidad: el ÚLTIMO
@@ -4094,7 +4116,11 @@ window.confirmarLiquidacionCotejo = async function() {
   const claves = entradas.map(e => e.semana.key);
   entradas.forEach(({ semana: s, diferencias }) => {
     const key = s.key;
-    const sd = datos[key];
+    // FIX v27.2: pasa por semData() (no datos[key] directo) para asegurar
+    // que lo que se congela como "pagado" ya trae salSnap/arcSnap/nivelSnap
+    // realineados — nunca un valor viejo que se haya quedado sin refrescar
+    // antes de llegar a este paso de confirmación.
+    const sd = semData(parseInt(key.slice(1)));
     if (!sd) return;
     sd.pagado = true;
     if (numeroCatorcena > 0) sd.catorcena = numeroCatorcena;
