@@ -1000,7 +1000,7 @@ const FEST = new Set([
 // de aquí. Cambia SOLO esta línea al subir una versión nueva y el footer
 // queda correcto automáticamente (antes se escribía aparte y se
 // desincronizaba: el footer decía v12.3.1 cuando el archivo ya era v15.0).
-const VERSION_ARCHIVO = 'controlTEv27.0-tabuladorAgo2026.html';
+const VERSION_ARCHIVO = 'controlTEv27.1-fixSalarioDiarioPorSemana.html';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -2276,6 +2276,19 @@ function render() {
   actualizarEstado();
   const sd = semData(semana);
 
+  // FIX v27.1: 'SALARIO DIARIO' / chip-sal / chip-hora mostraban SIEMPRE la
+  // tabla vigente HOY (TAB[nivel]), sin importar qué semana estuvieras
+  // viendo — confuso ahora que hay dos tablas (antes del aumento de ago
+  //2026 y después): al entrar a una semana vieja (ej. semana 30, julio)
+  // seguía mostrando el salario nuevo, aunque los montos calculados abajo
+  // sí usaban el salario correcto de esa semana (sd.salSnap). Ahora estos
+  // recuadros reflejan el salario CONGELADO de la semana abierta, igual
+  // que la tabla de desglose.
+  const horaTESemana = ((sd.salSnap + sd.salSnap * 0.60 + sd.arcSnap) / 8) * 2;
+  document.getElementById('chip-sal').textContent   = `$${sd.salSnap.toFixed(2)}/día`;
+  document.getElementById('chip-hora').textContent  = `$${horaTESemana.toFixed(2)}`;
+  document.getElementById('sal-visible').textContent = `$${sd.salSnap.toFixed(2)}`;
+
   // v16.2 FIX: el auto-llenado ahora solo aplica si el día realmente
   // corresponde a esa categoría (TE: horas>0 capturadas; INSALUBRE: día
   // normal) — antes se asignaba a CUALQUIER día que coincidiera en
@@ -2479,17 +2492,22 @@ function renderHist() {
 }
 
 function renderRefTasas() {
-  const sal = TAB[nivel];
-  const arc = ARC[nivel];
-  const h   = horaTE();
+  // FIX v27.1: usa el snapshot de la semana ABIERTA (sd.salSnap/arcSnap),
+  // no la tabla vigente hoy — mismo motivo que el fix de render() arriba.
+  // Así "Referencia" siempre coincide con los montos que ves en Captura.
+  const sd  = semData(semana);
+  const sal = sd.salSnap;
+  const arc = sd.arcSnap;
+  const h   = ((sal + sal * 0.60 + arc) / 8) * 2;
+  const penHoraCCTSemana = (sal / 8) + h;
   document.getElementById('ref-tasas').innerHTML = `
-    <div class="rrow"><span>Nivel</span><span>${nivel}</span></div>
+    <div class="rrow"><span>Nivel</span><span>${sd.nivelSnap !== undefined ? sd.nivelSnap : nivel}</span></div>
     <div class="rrow"><span>Salario tabulado diario</span><span>$${sal.toFixed(2)}</span></div>
     <div class="rrow"><span>Ayuda renta de casa (ARC)</span><span>$${arc.toFixed(2)}</span></div>
     <div class="rrow"><span>Hora extra (1130) = (sal+60%sal+arc)÷8×2</span><span>$${h.toFixed(4)}</span></div>
     <div class="rrow"><span>Comida (1140)</span><span>$${TASA_COMIDA.toFixed(2)} c/u</span></div>
     <div class="rrow"><span>TE Tolerancia (1180) = h×$hora×12.3%</span><span>${(TOL_PCT*100).toFixed(1)}%</span></div>
-    <div class="rrow" style="background:#fff8e6"><span>T. penado CCT (1190) = (sal÷8)+hora_TE · desde hr 13</span><span style="color:var(--gold)">$${penHoraCCT().toFixed(4)}/hr</span></div>`;
+    <div class="rrow" style="background:#fff8e6"><span>T. penado CCT (1190) = (sal÷8)+hora_TE · desde hr 13</span><span style="color:var(--gold)">$${penHoraCCTSemana.toFixed(4)}/hr</span></div>`;
 }
 
 function renderRef() {
@@ -2614,10 +2632,10 @@ function cambiarJornada() {
 function cambiarNivel() {
   nivel = parseInt(document.getElementById('sel-nivel').value);
   document.getElementById('sel-nivel2').value = nivel;
-  const sal = TAB[nivel];
-  document.getElementById('chip-sal').textContent  = `$${sal.toFixed(2)}/día`;
-  document.getElementById('chip-hora').textContent = `$${horaTE().toFixed(2)}`;
-  document.getElementById('sal-visible').textContent = `$${sal.toFixed(2)}`;
+  // FIX v27.1: ya no se escribe aquí chip-sal/chip-hora/sal-visible con
+  // TAB[nivel] (tabla de "hoy") — render(), llamado abajo, los deja con el
+  // salario CONGELADO de la semana abierta (que puede ser un nivel/salario
+  // distinto si esa semana ya tenía datos capturados con otro nivel).
   guardar();   // FIX: el nivel elegido no se persistia hasta que otra accion llamara guardar()
   render();
 }
