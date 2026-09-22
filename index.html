@@ -997,7 +997,7 @@ const FEST = new Set([
   '2026-11-16','2026-12-25'
 ]);
 
-const VERSION_ARCHIVO = 'controlTEv27.2-fixRetroactivoSemanasNoPagadas.html';
+const VERSION_ARCHIVO = 'Producition v28.0-Mantto localStorage';
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('footer-version');
   if (el) el.textContent = VERSION_ARCHIVO;
@@ -1134,6 +1134,13 @@ try {
 // restaurarDesdeNube() lo actualiza con el valor real de la cuenta en
 // cuanto la nube contesta.
 let nombreCache = localStorage.getItem('cte_nombre') || '';
+// v28.0-fixAutoguardado: buffer temporal para las horas que el trabajador
+// está tecleando AHORA MISMO. Mientras escribe, solo se actualiza este
+// objeto — no se recalcula, no se guarda, no se redibuja. Se "consolida"
+// (se aplica de verdad con setH) cada 2s, al salir de la casilla, al
+// cambiar de semana, al irse a segundo plano, o al cerrar la pestaña.
+// Formato: { i: índice del día 0-6, horas: número } o null si no hay nada.
+let draftHoras = null;
 
 // Hora extra ocasional (1130) = (sal + 60%sal + arc) ÷ 8 × 2  (Cláusula 193)
 const horaTE       = () => ((TAB[nivel] + TAB[nivel] * 0.60 + ARC[nivel]) / 8) * 2;
@@ -1323,6 +1330,16 @@ function congelarMontos(s) {
 // dispositivo). guardar() ahora delega en guardarSemana(semana) — mismo
 // comportamiento de siempre para quien no pasa semana explícita — y
 // setCatorcena usa guardarSemana(s) para apuntar a la semana correcta.
+function consolidarDraftHoras() {
+  if (!draftHoras) return;
+  const { i, horas } = draftHoras;
+  draftHoras = null;
+  if (!puedeUsarSemana(semana)) return;
+  semData(semana).dias[i].horas = horas;
+  guardar();
+  render();
+}
+
 function guardar() {
   guardarSemana(semana);
 }
@@ -1522,14 +1539,22 @@ setInterval(() => {
   if (fbCodigo && fbUid) guardarSemanaFirestore();
 }, 5000);
 
+setInterval(() => {
+  consolidarDraftHoras();
+}, 2000);
+
 // Se dispara si el usuario minimiza/cierra antes de que pase el debounce.
 // FIX v22.10: usa flushSyncPendiente() (vacía TODOS los temporizadores
 // pendientes en 'syncTimers') en vez de solo revisar el 'syncTimer' único
 // que ya no existe — ver esa función arriba.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushSyncPendiente();
+  if (document.visibilityState === 'hidden') {
+    consolidarDraftHoras();
+    flushSyncPendiente();
+  }
 });
 window.addEventListener('pagehide', () => {
+  consolidarDraftHoras();
   flushSyncPendiente();
 });
 
@@ -2337,8 +2362,8 @@ function render() {
       <input class="hrs-inp" type="number" min="0" max="24"
         ${d.horas === 0 ? 'placeholder="0"' : `value="${d.horas}"`}
         onfocus="if(this.value==='0'||this.value===''){this.value='';}"
-        onblur="if(this.value===''||isNaN(this.value)){this.value='';setH(${i},0);}"
-        oninput="setH(${i},this.value)">
+        onblur="if(this.value===''||isNaN(this.value)){this.value='';draftHoras={i:${i},horas:0};} consolidarDraftHoras();"
+        oninput="setHDraft(${i},this.value)">
       <div class="hrs-lbl">horas extra</div>
       ${(d.horas > 0 || d.ordenTrabajo) ? renderSelectorOrden(d, i, 'TE') : ''}
       ${(d.tipo === 'normal' || d.ordenInsalubre) ? renderSelectorOrden(d, i, 'INSALUBRE') : ''}
@@ -2609,6 +2634,17 @@ function borrarOrden(i, categoria) {
   render();
 }
 
+function setHDraft(i, v) {
+  const nuevas_horas = Math.max(0, Math.min(24, parseInt(v) || 0));
+  if (nuevas_horas > 0 && !puedeUsarSemana(semana)) {
+    document.querySelector(`#days-grid .day-card:nth-child(${i+1}) .hrs-inp`).value = 0;
+    draftHoras = null;
+    mostrarPaywall();
+    return;
+  }
+  draftHoras = { i, horas: nuevas_horas };
+}
+
 function setH(i, v) {
   const nuevas_horas = Math.max(0, parseInt(v) || 0);
   if (nuevas_horas > 0 && !puedeUsarSemana(semana)) {
@@ -2617,11 +2653,12 @@ function setH(i, v) {
     return;
   }
   semData(semana).dias[i].horas = nuevas_horas;
-  guardar();   // FIX: sin esto, las horas solo vivían en memoria y se perdían al recargar
+  guardar();
   render();
 }
 function setT(i, t) { semData(semana).dias[i].tipo = t; guardar(); render(); }   // FIX: mismo hoyo
 function cambiarSemana(d) {
+  consolidarDraftHoras();
   const nueva = Math.max(1, semana + d);
   if (d > 0 && !puedeUsarSemana(nueva)) {
     semana = nueva;
@@ -2630,7 +2667,7 @@ function cambiarSemana(d) {
     return;
   }
   semana = nueva;
-  guardarPosicion();   // FIX v22.9: era guardar() completo — navegar de semana no es editarla, ver guardarPosicion()
+  guardarPosicion();
   render();
 }
 function marcarPagado() { const sd=semData(semana); sd.pagado=!sd.pagado; guardar(); render(); }   // FIX: mismo hoyo
